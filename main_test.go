@@ -12,8 +12,9 @@ import (
 
 func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 	type fields struct {
-		Next   http.Handler
-		Config *Config
+		Next    http.Handler
+		Config  *Config
+		Headers *map[string]string
 	}
 	type sablier struct {
 		headers map[string]string
@@ -152,6 +153,58 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			expected: "Found",
 			code:     302,
 		},
+		{
+			name: "sablier service ignores request from configured user agent",
+			sablier: sablier{
+				headers: map[string]string{
+					"X-Sablier-Session-Status": "not-ready",
+				},
+				body: "response from sablier",
+			},
+			fields: fields{
+				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+					fmt.Fprint(w, "response from service")
+
+				}),
+				Config: &Config{
+					SessionDuration: "1m",
+					Dynamic:         &DynamicConfiguration{},
+					IgnoreUserAgent: "curl",
+				},
+				Headers: &map[string]string{
+					"User-Agent": "curl/8.7.1",
+				},
+			},
+			expected: "request with user agent ignored as configured",
+			code:     200,
+		},
+		{
+			name: "sablier service is ready when non ignored user agent requests",
+			sablier: sablier{
+				headers: map[string]string{
+					"X-Sablier-Session-Status": "ready",
+				},
+				body: "response from sablier",
+			},
+			fields: fields{
+				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+					fmt.Fprint(w, "response from service")
+
+				}),
+				Config: &Config{
+					SessionDuration: "1m",
+					Dynamic:         &DynamicConfiguration{},
+					IgnoreUserAgent: "curl",
+				},
+				Headers: &map[string]string{
+					"User-Agent": "Mozilla",
+				},
+			},
+			expected: "response from service",
+			code:     200,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,6 +225,12 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/my-nginx", nil)
 			w := httptest.NewRecorder()
+
+			if tt.fields.Headers != nil {
+				for k, v := range *tt.fields.Headers {
+					req.Header.Add(k, v)
+				}
+			}
 
 			sm.ServeHTTP(w, req)
 

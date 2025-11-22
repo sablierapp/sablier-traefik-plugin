@@ -8,13 +8,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"strings"
 )
 
 type SablierMiddleware struct {
-	client      *http.Client
-	request     *http.Request
-	next        http.Handler
-	useRedirect bool
+	client          *http.Client
+	request         *http.Request
+	next            http.Handler
+	useRedirect     bool
+	ignoreUserAgent string
 }
 
 // New function creates the configuration
@@ -30,11 +32,25 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		client:  &http.Client{},
 		next:    next,
 		// there is no way to make blocking work in traefik without redirect so let's make it default
-		useRedirect: config.Blocking != nil,
+		useRedirect:     config.Blocking != nil,
+		ignoreUserAgent: config.IgnoreUserAgent,
 	}, nil
 }
 
 func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	userAgent := req.Header.Get("User-Agent")
+
+	if len(userAgent) > 0 && len(sm.ignoreUserAgent) > 0 && strings.Contains(userAgent, sm.ignoreUserAgent) {
+		rw.WriteHeader(http.StatusOK)
+		_, err := rw.Write([]byte("request with user agent ignored as configured"))
+
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+		}
+
+		return
+	}
+
 	sablierRequest := sm.request.Clone(context.TODO())
 
 	resp, err := sm.client.Do(sablierRequest)
