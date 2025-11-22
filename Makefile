@@ -8,4 +8,4 @@ lint:
 	golangci-lint run
 
 fmt:
-	golangci-lint run --fix
+	golangci-lint fmt

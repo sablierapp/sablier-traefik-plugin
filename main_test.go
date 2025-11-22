@@ -38,7 +38,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			fields: fields{
 				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
-					fmt.Fprint(w, "response from service")
+					_, _ = fmt.Fprint(w, "response from service")
 
 				}),
 				Config: &Config{
@@ -60,7 +60,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			fields: fields{
 				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
-					fmt.Fprint(w, "response from service")
+					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
 					SessionDuration: "1m",
@@ -101,7 +101,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			fields: fields{
 				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
-					fmt.Fprint(w, "response from service")
+					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
 					SessionDuration: "1m",
@@ -122,7 +122,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			fields: fields{
 				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
-					fmt.Fprint(w, "response from service")
+					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
 					SessionDuration: "1m",
@@ -164,7 +164,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			fields: fields{
 				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
-					fmt.Fprint(w, "response from service")
+					_, _ = fmt.Fprint(w, "response from service")
 
 				}),
 				Config: &Config{
@@ -190,7 +190,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			fields: fields{
 				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
-					fmt.Fprint(w, "response from service")
+					_, _ = fmt.Fprint(w, "response from service")
 
 				}),
 				Config: &Config{
@@ -212,7 +212,10 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 				for key, value := range tt.sablier.headers {
 					w.Header().Add(key, value)
 				}
-				w.Write([]byte(tt.sablier.body))
+				_, err := w.Write([]byte(tt.sablier.body))
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
 			}))
 			defer sablierMockServer.Close()
 
@@ -235,7 +238,9 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			sm.ServeHTTP(w, req)
 
 			res := w.Result()
-			defer res.Body.Close()
+			defer func() {
+				_ = res.Body.Close()
+			}()
 			data, err := io.ReadAll(res.Body)
 			if err != nil {
 				t.Errorf("expected error to be nil got %v", err)

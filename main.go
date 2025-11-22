@@ -59,7 +59,9 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	conditonalResponseWriter := newResponseWriter(rw)
 
@@ -97,7 +99,10 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			}
 		} else {
 			conditonalResponseWriter.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-			io.Copy(conditonalResponseWriter, resp.Body)
+			_, err := io.Copy(conditonalResponseWriter, resp.Body)
+			if err != nil {
+				http.Error(conditonalResponseWriter, err.Error(), http.StatusInternalServerError)
+			}
 		}
 	}
 }
