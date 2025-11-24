@@ -32,7 +32,7 @@ This plugin is available in the [Traefik Plugin Catalog](https://plugins.traefik
 
 Add the following snippet to your Traefik static configuration:
 
-<!-- x-release-please-version-start -->
+<!-- x-release-please-start-version -->
 ```yaml
 experimental:
   plugins:
@@ -47,7 +47,7 @@ Or using CLI arguments:
 --experimental.plugins.sablier.moduleName=github.com/sablierapp/sablier-traefik-plugin
 --experimental.plugins.sablier.version=v1.0.0
 ```
-<!-- x-release-please-version-end -->
+<!-- x-release-please-end -->
 
 ## Prerequisites
 
