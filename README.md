@@ -38,14 +38,14 @@ experimental:
   plugins:
     sablier:
       moduleName: "github.com/sablierapp/sablier-traefik-plugin"
-      version: "v1.0.0"
+      version: "v1.1.0"
 ```
 
 Or using CLI arguments:
 
 ```yaml
 --experimental.plugins.sablier.moduleName=github.com/sablierapp/sablier-traefik-plugin
---experimental.plugins.sablier.version=v1.0.0
+--experimental.plugins.sablier.version=v1.1.0
 ```
 <!-- x-release-please-end -->
 
@@ -212,12 +212,13 @@ sablier:
 
 Enable the Swarm provider with empty services support:
 
+<!-- x-release-please-start-version -->
 ```yaml
 traefik:
   image: traefik:v3.0.4
   command:
     - --experimental.plugins.sablier.modulename=github.com/sablierapp/sablier-traefik-plugin
-    - --experimental.plugins.sablier.version=v1.0.0
+    - --experimental.plugins.sablier.version=v1.1.0
     - --entryPoints.http.address=:80
     - --providers.swarm=true
     - --providers.swarm.refreshSeconds=1
@@ -227,6 +228,7 @@ traefik:
   volumes:
     - '/var/run/docker.sock:/var/run/docker.sock'
 ```
+<!-- x-release-please-end -->
 
 **3. Configure Your Service Labels**
 
