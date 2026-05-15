@@ -27,6 +27,8 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		return nil, err
 	}
 
+	req.Header.Set("User-Agent", "sablier-traefik-plugin/"+Version)
+
 	return &SablierMiddleware{
 		request: req,
 		client:  &http.Client{},
