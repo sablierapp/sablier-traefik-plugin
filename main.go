@@ -51,7 +51,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
-	sablierRequest := sm.request.Clone(context.TODO())
+	sablierRequest := sm.request.Clone(req.Context())
 
 	resp, err := sm.client.Do(sablierRequest)
 	if err != nil {
