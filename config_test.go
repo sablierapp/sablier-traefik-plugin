@@ -235,6 +235,54 @@ func TestConfig_BuildRequest(t *testing.T) {
 			want:    nil,
 			wantErr: true,
 		},
+		{
+			name: "no names and no group returns error",
+			fields: fields{
+				SablierURL: "http://sablier:10000",
+				Dynamic:    &traefik.DynamicConfiguration{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "no names and no group returns error for blocking",
+			fields: fields{
+				SablierURL: "http://sablier:10000",
+				Blocking:   &traefik.BlockingConfiguration{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "no strategy configured returns error",
+			fields: fields{
+				SablierURL: "http://sablier:10000",
+				Names:      "nginx",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "empty sablier URL returns error",
+			fields: fields{
+				SablierURL: "",
+				Names:      "nginx",
+				Dynamic:    &traefik.DynamicConfiguration{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "blocking session with invalid session duration",
+			fields: fields{
+				SablierURL:      "http://sablier:10000",
+				Names:           "nginx",
+				SessionDuration: "invalid",
+				Blocking:        &traefik.BlockingConfiguration{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
