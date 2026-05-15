@@ -99,6 +99,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			}
 		} else {
 			conditonalResponseWriter.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+			conditonalResponseWriter.WriteHeader(resp.StatusCode)
 			_, err := io.Copy(conditonalResponseWriter, resp.Body)
 			if err != nil {
 				http.Error(conditonalResponseWriter, err.Error(), http.StatusInternalServerError)
