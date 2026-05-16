@@ -46,6 +46,10 @@
                 {
                     "type": "generic",
                     "path": "examples/docker/compose.yml"
+                },
+                {
+                    "type": "generic",
+                    "path": "version.go"
                 }
             ]
         }
