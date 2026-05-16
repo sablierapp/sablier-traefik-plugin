@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -19,12 +21,14 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 	type sablier struct {
 		headers map[string]string
 		body    string
+		code    int
 	}
 	tests := []struct {
 		name     string
 		fields   fields
 		sablier  sablier
 		expected string
+		method   string
 		code     int
 	}{
 		{
@@ -42,6 +46,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 				},
@@ -63,6 +68,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 				},
@@ -83,6 +89,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 				},
@@ -104,6 +111,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Blocking:        &BlockingConfiguration{},
 				},
@@ -125,6 +133,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Blocking:        &BlockingConfiguration{},
 				},
@@ -146,6 +155,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Blocking:        &BlockingConfiguration{},
 				},
@@ -168,6 +178,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 					IgnoreUserAgent: "curl",
@@ -194,6 +205,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 					IgnoreUserAgent: "curl",
@@ -205,12 +217,62 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			expected: "response from service",
 			code:     200,
 		},
+		{
+			name: "sablier response non-200 status code is forwarded when not ready",
+			sablier: sablier{
+				headers: map[string]string{
+					"X-Sablier-Session-Status": "not-ready",
+				},
+				body: "loading page",
+				code: http.StatusAccepted,
+			},
+			fields: fields{
+				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+					_, _ = fmt.Fprint(w, "response from service")
+				}),
+				Config: &Config{
+					Names:           "nginx",
+					SessionDuration: "1m",
+					Dynamic:         &DynamicConfiguration{},
+				},
+			},
+			expected: "loading page",
+			code:     http.StatusAccepted,
+		},
+		{
+			name: "blocking mode POST returns 307 when session ready but backend 503",
+			sablier: sablier{
+				headers: map[string]string{
+					"X-Sablier-Session-Status": "ready",
+				},
+				body: "response from sablier",
+			},
+			method: http.MethodPost,
+			fields: fields{
+				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// No httptrace callback — simulates Traefik 503 (no backend in pool),
+					// so conditonalResponseWriter.ready stays false.
+					w.WriteHeader(http.StatusServiceUnavailable)
+				}),
+				Config: &Config{
+					Names:           "nginx",
+					SessionDuration: "1m",
+					Blocking:        &BlockingConfiguration{},
+				},
+			},
+			expected: "Temporary Redirect",
+			code:     http.StatusTemporaryRedirect,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				for key, value := range tt.sablier.headers {
 					w.Header().Add(key, value)
+				}
+				if tt.sablier.code != 0 {
+					w.WriteHeader(tt.sablier.code)
 				}
 				_, err := w.Write([]byte(tt.sablier.body))
 				if err != nil {
@@ -226,7 +288,11 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 				panic(err)
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/my-nginx", nil)
+			method := http.MethodGet
+			if tt.method != "" {
+				method = tt.method
+			}
+			req := httptest.NewRequest(method, "/my-nginx", nil)
 			w := httptest.NewRecorder()
 
 			if tt.fields.Headers != nil {
@@ -239,7 +305,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 			res := w.Result()
 			defer func() {
-				_ = res.Body.Close()
+				_ = res.Body.Close() //nolint:errcheck
 			}()
 			data, err := io.ReadAll(res.Body)
 			if err != nil {
@@ -254,4 +320,339 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSablierMiddleware_ServeHTTP_SSE tests Server-Sent Events streaming through the middleware.
+//
+// The critical behaviour under test is that SSE events are forwarded to the client when
+// the session is ready, even though Traefik's internal proxy may call WriteHeader(200)
+// without the httptrace WroteHeaders callback firing first (issue #29). The fix is that
+// WriteHeader with any non-503 status code sets the responseWriter's ready flag so that
+// subsequent Write calls are not silently discarded.
+func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
+	t.Run("streams SSE events when session is ready", func(t *testing.T) {
+		// Sablier reports the session as ready.
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Sablier-Session-Status", "ready")
+			_, _ = w.Write([]byte("ready"))
+		}))
+		defer sablierMockServer.Close()
+
+		events := []string{
+			"data: event1\n\n",
+			"data: event2\n\n",
+			"data: event3\n\n",
+		}
+
+		// The next handler simulates Traefik's SSE reverse-proxy behaviour:
+		// it calls WriteHeader(200) then streams events via Write+Flush, without
+		// triggering the httptrace WroteHeaders callback. Before the fix, every
+		// Write was silently discarded because ready was never set to true.
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.WriteHeader(http.StatusOK)
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Error("responseWriter does not implement http.Flusher")
+				return
+			}
+			for _, event := range events {
+				_, _ = w.Write([]byte(event))
+				flusher.Flush()
+			}
+		})
+
+		sm, err := New(context.Background(), next, &Config{
+			SablierURL:      sablierMockServer.URL,
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/sse/stream", nil)
+		req.Header.Set("Accept", "text/event-stream")
+		w := httptest.NewRecorder()
+
+		sm.ServeHTTP(w, req)
+
+		res := w.Result()
+		defer res.Body.Close() //nolint:errcheck
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", res.StatusCode)
+		}
+		if got := res.Header.Get("Content-Type"); got != "text/event-stream" {
+			t.Errorf("expected Content-Type text/event-stream, got %q", got)
+		}
+
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, event := range events {
+			if !strings.Contains(string(body), event) {
+				t.Errorf("expected SSE event %q in response body, got:\n%s", event, body)
+			}
+		}
+	})
+
+	t.Run("shows Sablier waiting page for SSE request when session is not ready", func(t *testing.T) {
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Sablier-Session-Status", "not-ready")
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<h1>Starting up...</h1>"))
+		}))
+		defer sablierMockServer.Close()
+
+		// This handler must not be reached when the session is not ready.
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("data: should-not-reach-client\n\n"))
+		})
+
+		sm, err := New(context.Background(), next, &Config{
+			SablierURL:      sablierMockServer.URL,
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/sse/stream", nil)
+		req.Header.Set("Accept", "text/event-stream")
+		w := httptest.NewRecorder()
+
+		sm.ServeHTTP(w, req)
+
+		res := w.Result()
+		defer res.Body.Close() //nolint:errcheck
+
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), "should-not-reach-client") {
+			t.Errorf("SSE events from backend must not reach the client when session is not ready, got:\n%s", body)
+		}
+		if !strings.Contains(string(body), "Starting up...") {
+			t.Errorf("expected Sablier waiting page in response, got:\n%s", body)
+		}
+	})
+
+	t.Run("shows Sablier waiting page when session is ready but backend returns 503", func(t *testing.T) {
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Sablier-Session-Status", "ready")
+			_, _ = w.Write([]byte("container starting"))
+		}))
+		defer sablierMockServer.Close()
+
+		// Backend is unavailable (no servers in the pool).
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		})
+
+		sm, err := New(context.Background(), next, &Config{
+			SablierURL:      sablierMockServer.URL,
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/sse/stream", nil)
+		req.Header.Set("Accept", "text/event-stream")
+		w := httptest.NewRecorder()
+
+		sm.ServeHTTP(w, req)
+
+		res := w.Result()
+		defer res.Body.Close() //nolint:errcheck
+
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "container starting") {
+			t.Errorf("expected Sablier waiting body when backend is 503, got:\n%s", body)
+		}
+	})
+
+	// TestSablierMiddleware_ServeHTTP_SSE_RealServer verifies end-to-end SSE streaming
+	// using a real HTTP server and client, closely matching how Traefik proxies SSE.
+	t.Run("streams SSE events end-to-end via real HTTP server", func(t *testing.T) {
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Sablier-Session-Status", "ready")
+			_, _ = w.Write([]byte("ready"))
+		}))
+		defer sablierMockServer.Close()
+
+		events := []string{
+			"data: hello\n\n",
+			"data: world\n\n",
+		}
+
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.WriteHeader(http.StatusOK)
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Error("responseWriter does not implement http.Flusher")
+				return
+			}
+			for _, event := range events {
+				_, _ = w.Write([]byte(event))
+				flusher.Flush()
+			}
+		})
+
+		sm, err := New(context.Background(), next, &Config{
+			SablierURL:      sablierMockServer.URL,
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Wrap the middleware in a real HTTP test server.
+		srv := httptest.NewServer(sm)
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/sse/stream") //nolint:noctx
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close() //nolint:errcheck
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", resp.StatusCode)
+		}
+		if got := resp.Header.Get("Content-Type"); got != "text/event-stream" {
+			t.Errorf("expected Content-Type text/event-stream, got %q", got)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, event := range events {
+			if !strings.Contains(string(body), event) {
+				t.Errorf("expected SSE event %q in response body, got:\n%s", event, body)
+			}
+		}
+	})
+}
+
+func TestSablierMiddleware_KeepAlive(t *testing.T) {
+	t.Run("sends keep-alive requests to Sablier while connection is held", func(t *testing.T) {
+		// Each request to the mock Sablier server delivers a signal on this channel.
+		sablierRequests := make(chan struct{}, 20)
+
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case sablierRequests <- struct{}{}:
+			default:
+			}
+			w.Header().Add("X-Sablier-Session-Status", "ready")
+			_, _ = w.Write([]byte("response from sablier"))
+		}))
+		defer sablierMockServer.Close()
+
+		sm, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+			// Simulate a long-lived connection (SSE/WebSocket): block until disconnected.
+			<-r.Context().Done()
+		}), &Config{
+			SablierURL:        sablierMockServer.URL,
+			Names:             "nginx",
+			SessionDuration:   "1m",
+			Dynamic:           &DynamicConfiguration{},
+			KeepAliveInterval: "20ms",
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		req := httptest.NewRequest(http.MethodGet, "/my-nginx", nil).WithContext(ctx)
+
+		done := make(chan struct{})
+		go func() {
+			sm.ServeHTTP(httptest.NewRecorder(), req)
+			close(done)
+		}()
+
+		// Consume the initial request to Sablier, then wait for two keep-alive pings.
+		// The test will time out (and fail) if keep-alive never fires.
+		<-sablierRequests
+		<-sablierRequests
+		<-sablierRequests
+
+		// Cancel the context to disconnect the client and stop the goroutine.
+		cancel()
+		<-done
+	})
+
+	t.Run("does not send keep-alive requests when disabled", func(t *testing.T) {
+		var count int32
+
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&count, 1)
+			w.Header().Add("X-Sablier-Session-Status", "ready")
+			_, _ = w.Write([]byte("response from sablier"))
+		}))
+		defer sablierMockServer.Close()
+
+		sm, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+			_, _ = fmt.Fprint(w, "response from service")
+		}), &Config{
+			SablierURL:      sablierMockServer.URL,
+			Names:           "nginx",
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+			// KeepAliveInterval intentionally omitted
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		sm.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+		if got := atomic.LoadInt32(&count); got != 1 {
+			t.Errorf("expected exactly 1 sablier request (no keep-alive), got %d", got)
+		}
+	})
+
+	t.Run("returns error for invalid keepAliveInterval", func(t *testing.T) {
+		_, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), &Config{
+			SablierURL:        "http://sablier:10000",
+			Names:             "nginx",
+			Dynamic:           &DynamicConfiguration{},
+			KeepAliveInterval: "invalid",
+		}, "middleware")
+		if err == nil {
+			t.Error("expected error for invalid keepAliveInterval, got nil")
+		}
+	})
+
+	t.Run("returns error for non-positive keepAliveInterval", func(t *testing.T) {
+		_, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), &Config{
+			SablierURL:        "http://sablier:10000",
+			Names:             "nginx",
+			Dynamic:           &DynamicConfiguration{},
+			KeepAliveInterval: "-5s",
+		}, "middleware")
+		if err == nil {
+			t.Error("expected error for non-positive keepAliveInterval, got nil")
+		}
+	})
 }

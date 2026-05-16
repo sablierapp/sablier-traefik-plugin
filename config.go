@@ -22,25 +22,27 @@ type BlockingConfiguration struct {
 type Config struct {
 	SablierURL string `yaml:"sablierUrl"`
 	// Deprecated: use Group instead
-	Names           string `yaml:"names"`
-	Group           string `yaml:"group"`
-	SessionDuration string `yaml:"sessionDuration"`
-	splittedNames   []string
-	Dynamic         *DynamicConfiguration  `yaml:"dynamic"`
-	Blocking        *BlockingConfiguration `yaml:"blocking"`
-	IgnoreUserAgent string                 `yaml:"ignoreUserAgent"`
+	Names             string `yaml:"names"`
+	Group             string `yaml:"group"`
+	SessionDuration   string `yaml:"sessionDuration"`
+	KeepAliveInterval string `yaml:"keepAliveInterval"`
+	splittedNames     []string
+	Dynamic           *DynamicConfiguration  `yaml:"dynamic"`
+	Blocking          *BlockingConfiguration `yaml:"blocking"`
+	IgnoreUserAgent   string                 `yaml:"ignoreUserAgent"`
 }
 
 func CreateConfig() *Config {
 	return &Config{
-		SablierURL:      "http://sablier:10000",
-		Names:           "",
-		Group:           "",
-		SessionDuration: "",
-		splittedNames:   []string{},
-		Dynamic:         nil,
-		Blocking:        nil,
-		IgnoreUserAgent: "",
+		SablierURL:        "http://sablier:10000",
+		Names:             "",
+		Group:             "",
+		SessionDuration:   "",
+		KeepAliveInterval: "",
+		splittedNames:     []string{},
+		Dynamic:           nil,
+		Blocking:          nil,
+		IgnoreUserAgent:   "",
 	}
 }
 
