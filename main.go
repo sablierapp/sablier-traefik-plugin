@@ -102,6 +102,11 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 	if !conditonalResponseWriter.ready {
 		conditonalResponseWriter.ready = true
+		// Prevent browsers and proxies from caching the waiting page or redirect.
+		// Without this, a cached 200 or 3xx response would keep being served even
+		// after the container is ready, causing the stuck-page bug (issue #28) and
+		// the stale-redirect bug (issue #30).
+		conditonalResponseWriter.Header().Set("Cache-Control", "no-store")
 		if useRedirect {
 			conditonalResponseWriter.Header().Set("Location", req.URL.String())
 
