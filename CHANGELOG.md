@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.2.0...v1.3.0) (2026-05-16)
+
+
+### Features
+
+* add fail open ([#40](https://github.com/sablierapp/sablier-traefik-plugin/issues/40)) ([1f3721b](https://github.com/sablierapp/sablier-traefik-plugin/commit/1f3721b636cfa2a07c9afc7bf3a1071ffd147d71))
+
 ## [1.2.0](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.1.0...v1.2.0) (2026-05-16)
 
 
