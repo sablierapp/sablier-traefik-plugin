@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"sync/atomic"
 	"testing"
 )
 
@@ -318,4 +319,112 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSablierMiddleware_KeepAlive(t *testing.T) {
+	t.Run("sends keep-alive requests to Sablier while connection is held", func(t *testing.T) {
+		// Each request to the mock Sablier server delivers a signal on this channel.
+		sablierRequests := make(chan struct{}, 20)
+
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case sablierRequests <- struct{}{}:
+			default:
+			}
+			w.Header().Add("X-Sablier-Session-Status", "ready")
+			_, _ = w.Write([]byte("response from sablier"))
+		}))
+		defer sablierMockServer.Close()
+
+		sm, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+			// Simulate a long-lived connection (SSE/WebSocket): block until disconnected.
+			<-r.Context().Done()
+		}), &Config{
+			SablierURL:        sablierMockServer.URL,
+			Names:             "nginx",
+			SessionDuration:   "1m",
+			Dynamic:           &DynamicConfiguration{},
+			KeepAliveInterval: "20ms",
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		req := httptest.NewRequest(http.MethodGet, "/my-nginx", nil).WithContext(ctx)
+
+		done := make(chan struct{})
+		go func() {
+			sm.ServeHTTP(httptest.NewRecorder(), req)
+			close(done)
+		}()
+
+		// Consume the initial request to Sablier, then wait for two keep-alive pings.
+		// The test will time out (and fail) if keep-alive never fires.
+		<-sablierRequests
+		<-sablierRequests
+		<-sablierRequests
+
+		// Cancel the context to disconnect the client and stop the goroutine.
+		cancel()
+		<-done
+	})
+
+	t.Run("does not send keep-alive requests when disabled", func(t *testing.T) {
+		var count int32
+
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&count, 1)
+			w.Header().Add("X-Sablier-Session-Status", "ready")
+			_, _ = w.Write([]byte("response from sablier"))
+		}))
+		defer sablierMockServer.Close()
+
+		sm, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+			_, _ = fmt.Fprint(w, "response from service")
+		}), &Config{
+			SablierURL:      sablierMockServer.URL,
+			Names:           "nginx",
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+			// KeepAliveInterval intentionally omitted
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		sm.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+		if got := atomic.LoadInt32(&count); got != 1 {
+			t.Errorf("expected exactly 1 sablier request (no keep-alive), got %d", got)
+		}
+	})
+
+	t.Run("returns error for invalid keepAliveInterval", func(t *testing.T) {
+		_, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), &Config{
+			SablierURL:        "http://sablier:10000",
+			Names:             "nginx",
+			Dynamic:           &DynamicConfiguration{},
+			KeepAliveInterval: "invalid",
+		}, "middleware")
+		if err == nil {
+			t.Error("expected error for invalid keepAliveInterval, got nil")
+		}
+	})
+
+	t.Run("returns error for non-positive keepAliveInterval", func(t *testing.T) {
+		_, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), &Config{
+			SablierURL:        "http://sablier:10000",
+			Names:             "nginx",
+			Dynamic:           &DynamicConfiguration{},
+			KeepAliveInterval: "-5s",
+		}, "middleware")
+		if err == nil {
+			t.Error("expected error for non-positive keepAliveInterval, got nil")
+		}
+	})
 }

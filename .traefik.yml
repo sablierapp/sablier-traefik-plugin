@@ -12,6 +12,7 @@ testData:
   names: whoami,nginx               # Comma separated names of containers/services/deployments etc.
   group: default                    # Group name to use to filter by label, ignored if names is set
   sessionDuration: 1m               # The session duration after which containers/services/deployments instances are shutdown
+  keepAliveInterval: 30s            # (optional) How often Sablier is pinged to renew the session while a long-lived connection (SSE, WebSocket, long-polling) is held. Should be shorter than `sessionDuration`. Disabled when omitted.
   # You can only use one strategy at a time
   # To do so, only declare `dynamic` or `blocking`
 
