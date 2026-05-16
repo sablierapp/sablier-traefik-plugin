@@ -2,6 +2,7 @@ package sablier_traefik_plugin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -178,10 +179,10 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 				}),
 				Config: &Config{
-					Names:           "nginx",
-					SessionDuration: "1m",
-					Dynamic:         &DynamicConfiguration{},
-					IgnoreUserAgent: "curl",
+					Names:            "nginx",
+					SessionDuration:  "1m",
+					Dynamic:          &DynamicConfiguration{},
+					IgnoreUserAgents: []string{"curl"},
 				},
 				Headers: &map[string]string{
 					"User-Agent": "curl/8.7.1",
@@ -205,10 +206,10 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 				}),
 				Config: &Config{
-					Names:           "nginx",
-					SessionDuration: "1m",
-					Dynamic:         &DynamicConfiguration{},
-					IgnoreUserAgent: "curl",
+					Names:            "nginx",
+					SessionDuration:  "1m",
+					Dynamic:          &DynamicConfiguration{},
+					IgnoreUserAgents: []string{"curl"},
 				},
 				Headers: &map[string]string{
 					"User-Agent": "Mozilla",
@@ -649,6 +650,145 @@ func TestSablierMiddleware_CacheControl(t *testing.T) {
 
 		if got := w.Result().Header.Get("Cache-Control"); got != "" {
 			t.Errorf("plugin must not inject Cache-Control into backend responses, got %q", got)
+		}
+	})
+}
+
+func TestSablierMiddleware_IgnoreUserAgent(t *testing.T) {
+	// notReadyMock returns a Sablier mock that always reports the session as not-ready.
+	notReadyMock := func(t *testing.T) *httptest.Server {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Sablier-Session-Status", "not-ready")
+			_, _ = w.Write([]byte("not ready"))
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+
+	baseConfig := func(sablierURL string, patterns []string) *Config {
+		return &Config{
+			SablierURL:       sablierURL,
+			Names:            "nginx",
+			SessionDuration:  "1m",
+			Dynamic:          &DynamicConfiguration{},
+			IgnoreUserAgents: patterns,
+		}
+	}
+
+	serve := func(t *testing.T, patterns []string, ua string) *http.Response {
+		t.Helper()
+		mock := notReadyMock(t)
+		sm, err := New(context.Background(), http.NotFoundHandler(), baseConfig(mock.URL, patterns), "middleware")
+		if err != nil {
+			t.Fatalf("New() error: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if ua != "" {
+			req.Header.Set("User-Agent", ua)
+		}
+		w := httptest.NewRecorder()
+		sm.ServeHTTP(w, req)
+		return w.Result()
+	}
+
+	// Single-value form: []string with one element.
+	t.Run("single pattern matches substring", func(t *testing.T) {
+		res := serve(t, []string{"curl"}, "curl/8.7.1")
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", res.StatusCode)
+		}
+		body, _ := io.ReadAll(res.Body)
+		if string(body) != "request with user agent ignored as configured" {
+			t.Errorf("unexpected body: %s", body)
+		}
+	})
+
+	t.Run("single pattern does not match unrelated UA", func(t *testing.T) {
+		res := serve(t, []string{"curl"}, "Mozilla/5.0")
+		body, _ := io.ReadAll(res.Body)
+		if string(body) == "request with user agent ignored as configured" {
+			t.Error("Mozilla UA should not be ignored by curl pattern")
+		}
+	})
+
+	t.Run("case-insensitive regexp matches UptimeRobot UA", func(t *testing.T) {
+		res := serve(t, []string{"(?i)uptimerobot"}, "Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/)")
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", res.StatusCode)
+		}
+		body, _ := io.ReadAll(res.Body)
+		if string(body) != "request with user agent ignored as configured" {
+			t.Errorf("unexpected body: %s", body)
+		}
+	})
+
+	// Array form: []string with multiple elements.
+	t.Run("multiple patterns in a list — first matches", func(t *testing.T) {
+		res := serve(t, []string{"curl", "(?i)uptimerobot", "gitlab-runner"}, "curl/8.7.1")
+		body, _ := io.ReadAll(res.Body)
+		if string(body) != "request with user agent ignored as configured" {
+			t.Errorf("curl should be ignored by first pattern, got: %s", body)
+		}
+	})
+
+	t.Run("multiple patterns in a list — last matches", func(t *testing.T) {
+		res := serve(t, []string{"curl", "(?i)uptimerobot", "gitlab-runner"}, "gitlab-runner/17.0")
+		body, _ := io.ReadAll(res.Body)
+		if string(body) != "request with user agent ignored as configured" {
+			t.Errorf("gitlab-runner should be ignored by last pattern, got: %s", body)
+		}
+	})
+
+	t.Run("multiple patterns in a list — none match", func(t *testing.T) {
+		res := serve(t, []string{"curl", "(?i)uptimerobot", "gitlab-runner"}, "Mozilla/5.0")
+		body, _ := io.ReadAll(res.Body)
+		if string(body) == "request with user agent ignored as configured" {
+			t.Error("Mozilla UA should not be ignored")
+		}
+	})
+
+	t.Run("empty User-Agent is never ignored", func(t *testing.T) {
+		res := serve(t, []string{".*"}, "") // .* matches everything, but empty UA must be exempt
+		body, _ := io.ReadAll(res.Body)
+		if string(body) == "request with user agent ignored as configured" {
+			t.Error("empty User-Agent must not be treated as ignored")
+		}
+	})
+
+	t.Run("invalid regexp returns error from New()", func(t *testing.T) {
+		mock := notReadyMock(t)
+		_, err := New(context.Background(), http.NotFoundHandler(), baseConfig(mock.URL, []string{"[invalid"}), "middleware")
+		if err == nil {
+			t.Fatal("expected error for invalid regexp, got nil")
+		}
+	})
+
+	// Deserialization: StringOrStringSlice accepts both a JSON string (single
+	// value, backward-compatible) and a JSON array (native list form).
+	t.Run("JSON single string deserializes to one-element slice", func(t *testing.T) {
+		var got StringOrStringSlice
+		if err := json.Unmarshal([]byte(`"curl"`), &got); err != nil {
+			t.Fatalf("UnmarshalJSON error: %v", err)
+		}
+		if len(got) != 1 || got[0] != "curl" {
+			t.Errorf("expected [curl], got %v", got)
+		}
+	})
+
+	t.Run("JSON array deserializes to multi-element slice", func(t *testing.T) {
+		var got StringOrStringSlice
+		if err := json.Unmarshal([]byte(`["curl","(?i)uptimerobot","gitlab-runner"]`), &got); err != nil {
+			t.Fatalf("UnmarshalJSON error: %v", err)
+		}
+		want := StringOrStringSlice{"curl", "(?i)uptimerobot", "gitlab-runner"}
+		if len(got) != len(want) {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("index %d: expected %q, got %q", i, want[i], got[i])
+			}
 		}
 	})
 }

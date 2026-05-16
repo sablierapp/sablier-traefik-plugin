@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -17,7 +18,7 @@ type SablierMiddleware struct {
 	request           *http.Request
 	next              http.Handler
 	useRedirect       bool
-	ignoreUserAgent   string
+	ignoreUserAgents  []*regexp.Regexp
 	keepAliveInterval time.Duration
 }
 
@@ -41,28 +42,47 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		}
 	}
 
+	ignoreUserAgents, err := compileIgnoreUserAgents(config.IgnoreUserAgents)
+	if err != nil {
+		return nil, err
+	}
+
 	return &SablierMiddleware{
 		request: req,
 		client:  &http.Client{},
 		next:    next,
 		// there is no way to make blocking work in traefik without redirect so let's make it default
 		useRedirect:       config.Blocking != nil,
-		ignoreUserAgent:   config.IgnoreUserAgent,
+		ignoreUserAgents:  ignoreUserAgents,
 		keepAliveInterval: keepAliveInterval,
 	}, nil
 }
 
-func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	userAgent := req.Header.Get("User-Agent")
-
-	if len(userAgent) > 0 && len(sm.ignoreUserAgent) > 0 && strings.Contains(userAgent, sm.ignoreUserAgent) {
-		rw.WriteHeader(http.StatusOK)
-		_, err := rw.Write([]byte("request with user agent ignored as configured"))
-
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
+// compileIgnoreUserAgents compiles each pattern in the ignoreUserAgent config
+// list into a regexp. Each element of patterns is treated as one Go regexp.
+func compileIgnoreUserAgents(patterns []string) ([]*regexp.Regexp, error) {
+	if len(patterns) == 0 {
+		return nil, nil
+	}
+	var compiled []*regexp.Regexp
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
 		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ignoreUserAgent pattern %q: %v", pattern, err)
+		}
+		compiled = append(compiled, re)
+	}
+	return compiled, nil
+}
 
+func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	if sm.matchesIgnoredUserAgent(req.Header.Get("User-Agent")) {
+		rw.WriteHeader(http.StatusOK)
+		_, _ = rw.Write([]byte("request with user agent ignored as configured"))
 		return
 	}
 
@@ -194,6 +214,20 @@ func (r *responseWriter) Flush() {
 	if flusher, ok := r.responseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+// matchesIgnoredUserAgent reports whether ua matches any of the compiled
+// ignoreUserAgent patterns. An empty User-Agent is never considered a match.
+func (sm *SablierMiddleware) matchesIgnoredUserAgent(ua string) bool {
+	if ua == "" {
+		return false
+	}
+	for _, re := range sm.ignoreUserAgents {
+		if re.MatchString(ua) {
+			return true
+		}
+	}
+	return false
 }
 
 // keepAlive periodically sends requests to Sablier to renew the session while a

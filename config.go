@@ -1,12 +1,43 @@
 package sablier_traefik_plugin
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// StringOrStringSlice is a []string config field that can be deserialized from
+// either a single JSON string or a JSON/YAML array of strings. Traefik's
+// configuration system also coerces a single string into a one-element slice
+// when loading YAML or Docker-label configs (weak-decode behaviour), so both
+// forms below are accepted:
+//
+//	ignoreUserAgent: curl                # single value (backward-compatible)
+//	ignoreUserAgent:                     # list
+//	  - curl
+//	  - "(?i)uptimerobot"
+type StringOrStringSlice []string
+
+// UnmarshalJSON implements json.Unmarshaler so that this field accepts both a
+// JSON string ("curl") and a JSON array (["curl","(?i)uptimerobot"]).
+func (s *StringOrStringSlice) UnmarshalJSON(data []byte) error {
+	// Try JSON array first.
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*s = arr
+		return nil
+	}
+	// Fall back to a single JSON string.
+	var single string
+	if err := json.Unmarshal(data, &single); err != nil {
+		return fmt.Errorf("ignoreUserAgent: expected a string or an array of strings")
+	}
+	*s = StringOrStringSlice{single}
+	return nil
+}
 
 type DynamicConfiguration struct {
 	DisplayName      string `yaml:"displayname"`
@@ -29,7 +60,7 @@ type Config struct {
 	splittedNames     []string
 	Dynamic           *DynamicConfiguration  `yaml:"dynamic"`
 	Blocking          *BlockingConfiguration `yaml:"blocking"`
-	IgnoreUserAgent   string                 `yaml:"ignoreUserAgent"`
+	IgnoreUserAgents  StringOrStringSlice    `yaml:"ignoreUserAgent"`
 }
 
 func CreateConfig() *Config {
@@ -42,7 +73,7 @@ func CreateConfig() *Config {
 		splittedNames:     []string{},
 		Dynamic:           nil,
 		Blocking:          nil,
-		IgnoreUserAgent:   "",
+		IgnoreUserAgents:  StringOrStringSlice{},
 	}
 }
 
