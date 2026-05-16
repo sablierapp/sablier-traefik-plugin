@@ -60,7 +60,7 @@ type Config struct {
 	splittedNames     []string
 	Dynamic           *DynamicConfiguration  `yaml:"dynamic"`
 	Blocking          *BlockingConfiguration `yaml:"blocking"`
-	IgnoreUserAgents  StringOrStringSlice    `yaml:"ignoreUserAgent"`
+	IgnoreUserAgent   StringOrStringSlice    `yaml:"ignoreUserAgent" json:"ignoreUserAgent"`
 }
 
 func CreateConfig() *Config {
@@ -73,7 +73,7 @@ func CreateConfig() *Config {
 		splittedNames:     []string{},
 		Dynamic:           nil,
 		Blocking:          nil,
-		IgnoreUserAgents:  StringOrStringSlice{},
+		IgnoreUserAgent:   StringOrStringSlice{},
 	}
 }
 

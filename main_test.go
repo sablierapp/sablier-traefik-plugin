@@ -182,7 +182,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					Names:            "nginx",
 					SessionDuration:  "1m",
 					Dynamic:          &DynamicConfiguration{},
-					IgnoreUserAgents: []string{"curl"},
+					IgnoreUserAgent: []string{"curl"},
 				},
 				Headers: &map[string]string{
 					"User-Agent": "curl/8.7.1",
@@ -209,7 +209,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					Names:            "nginx",
 					SessionDuration:  "1m",
 					Dynamic:          &DynamicConfiguration{},
-					IgnoreUserAgents: []string{"curl"},
+					IgnoreUserAgent: []string{"curl"},
 				},
 				Headers: &map[string]string{
 					"User-Agent": "Mozilla",
@@ -672,7 +672,7 @@ func TestSablierMiddleware_IgnoreUserAgent(t *testing.T) {
 			Names:            "nginx",
 			SessionDuration:  "1m",
 			Dynamic:          &DynamicConfiguration{},
-			IgnoreUserAgents: patterns,
+			IgnoreUserAgent: patterns,
 		}
 	}
 

@@ -42,7 +42,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		}
 	}
 
-	ignoreUserAgents, err := compileIgnoreUserAgents(config.IgnoreUserAgents)
+	ignoreUserAgents, err := compileIgnoreUserAgents(config.IgnoreUserAgent)
 	if err != nil {
 		return nil, err
 	}
