@@ -305,7 +305,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 			res := w.Result()
 			defer func() {
-				_ = res.Body.Close()
+				_ = res.Body.Close() //nolint:errcheck
 			}()
 			data, err := io.ReadAll(res.Body)
 			if err != nil {
@@ -379,7 +379,7 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 		sm.ServeHTTP(w, req)
 
 		res := w.Result()
-		defer res.Body.Close()
+		defer res.Body.Close() //nolint:errcheck
 
 		if res.StatusCode != http.StatusOK {
 			t.Errorf("expected status 200, got %d", res.StatusCode)
@@ -430,7 +430,7 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 		sm.ServeHTTP(w, req)
 
 		res := w.Result()
-		defer res.Body.Close()
+		defer res.Body.Close() //nolint:errcheck
 
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
@@ -472,7 +472,7 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 		sm.ServeHTTP(w, req)
 
 		res := w.Result()
-		defer res.Body.Close()
+		defer res.Body.Close() //nolint:errcheck
 
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
@@ -529,7 +529,7 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected status 200, got %d", resp.StatusCode)
