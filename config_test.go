@@ -1,6 +1,7 @@
 package sablier_traefik_plugin_test
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"reflect"
@@ -302,6 +303,41 @@ func TestConfig_BuildRequest(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Config.BuildRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStringOrStringSlice_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  traefik.StringOrStringSlice
+	}{
+		{
+			name:  "single string value (backward-compatible)",
+			input: `"curl"`,
+			want:  traefik.StringOrStringSlice{"curl"},
+		},
+		{
+			name:  "array of strings (native list form)",
+			input: `["curl","(?i)uptimerobot","gitlab-runner"]`,
+			want:  traefik.StringOrStringSlice{"curl", "(?i)uptimerobot", "gitlab-runner"},
+		},
+		{
+			name:  "single-element array",
+			input: `["curl"]`,
+			want:  traefik.StringOrStringSlice{"curl"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got traefik.StringOrStringSlice
+			if err := json.Unmarshal([]byte(tt.input), &got); err != nil {
+				t.Fatalf("UnmarshalJSON() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("UnmarshalJSON() = %v, want %v", got, tt.want)
 			}
 		})
 	}

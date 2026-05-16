@@ -71,7 +71,9 @@ http:
           group: my-app-group
           sessionDuration: 1m
           keepAliveInterval: 30s
-          ignoreUserAgent: curl
+          ignoreUserAgent:
+            - curl
+            - "(?i)uptimerobot"
           dynamic:
             displayName: My Services
             showDetails: true
@@ -90,7 +92,7 @@ http:
 | `dynamic.theme`            | string   | No       | Server default  | Theme for the waiting page (e.g., `hacker-terminal`, `ghost`, `matrix`) |
 | `dynamic.refreshFrequency` | duration | No       | Server default  | How often the waiting page checks if instances are ready                |
 | `blocking.timeout` | duration | No       | -       | Maximum time to wait for instances to become ready |
-| `ignoreUserAgent` | string   | No     | -        | User Agent that should be ignored (middleware sends `HTTP 200` to not wake up the container)
+| `ignoreUserAgent` | string or string\[\] | No     | -        | List of [Go regexp](https://pkg.go.dev/regexp/syntax) patterns. Requests whose `User-Agent` matches any pattern receive an immediate `HTTP 200` without waking the container. Can be specified as a YAML list (preferred) or as a single string (backward-compatible). Patterns are case-sensitive unless the `(?i)` flag is used. |
 
 ## Usage
 
@@ -122,7 +124,10 @@ http:
           keepAliveInterval: 30s            # (Optional) Re-ping Sablier every 30s to keep long-lived connections alive
           # Only one strategy can be used at a time
           # Declare either `dynamic` or `blocking`, not both
-          ignoreUserAgent: curl             # (Optional) Ignore requests with User Agent header curl to not wake up container
+          ignoreUserAgent:                          # (Optional) List of regexp patterns; matching UAs are silently ignored
+            - curl
+            - "(?i)uptimerobot"
+            - gitlab-runner
 
           # Dynamic strategy: displays a waiting page
           dynamic:

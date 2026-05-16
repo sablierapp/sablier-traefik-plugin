@@ -1,7 +1,7 @@
 services:
   traefik:
     # Support for non running containers was added in v3.6.0 (https://github.com/traefik/traefik/pull/10645)
-    image: traefik:v3.6.0
+    image: traefik:v3.7.1
     command:
       # Uncomment the following lines to use the released version of the plugin
       # - --experimental.plugins.sablier.modulename=github.com/sablierapp/sablier-traefik-plugin
@@ -19,7 +19,7 @@ services:
     restart: "no"
 
   sablier:
-    image: sablierapp/sablier:1.10.1
+    image: sablierapp/sablier:1.12.0
     command:
       - start
       - --provider.name=docker
@@ -27,7 +27,7 @@ services:
       - '/var/run/docker.sock:/var/run/docker.sock'
 
   mimic:
-    image: sablierapp/mimic:v0.3.1
+    image: sablierapp/mimic:v0.3.3
     healthcheck:
       test: [ "CMD", "/mimic", "healthcheck"]
       interval: 5s
@@ -37,6 +37,8 @@ services:
       - traefik.http.middlewares.mimicsablier.plugin.sablier.group=mimic
       - traefik.http.middlewares.mimicsablier.plugin.sablier.sablierUrl=http://sablier:10000
       - traefik.http.middlewares.mimicsablier.plugin.sablier.sessionDuration=1m
+      - traefik.http.middlewares.mimicsablier.plugin.sablier.ignoreUserAgent[0]=curl
+      - traefik.http.middlewares.mimicsablier.plugin.sablier.ignoreUserAgent[1]=(?i)uptimerobot
       - traefik.http.middlewares.mimicsablier.plugin.sablier.dynamic.displayName=Mimic
       # Available since Traefik v3.6.0 (https://github.com/traefik/traefik/pull/10645)
       - traefik.docker.allownonrunning=true
