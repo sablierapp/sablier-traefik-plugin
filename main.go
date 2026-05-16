@@ -18,6 +18,7 @@ type SablierMiddleware struct {
 	request           *http.Request
 	next              http.Handler
 	useRedirect       bool
+	failOpen          bool
 	ignoreUserAgents  []*regexp.Regexp
 	keepAliveInterval time.Duration
 }
@@ -53,6 +54,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		next:    next,
 		// there is no way to make blocking work in traefik without redirect so let's make it default
 		useRedirect:       config.Blocking != nil,
+		failOpen:          config.FailOpen,
 		ignoreUserAgents:  ignoreUserAgents,
 		keepAliveInterval: keepAliveInterval,
 	}, nil
@@ -90,6 +92,10 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 	resp, err := sm.client.Do(sablierRequest)
 	if err != nil {
+		if sm.failOpen {
+			sm.next.ServeHTTP(rw, req)
+			return
+		}
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
