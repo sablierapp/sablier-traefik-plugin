@@ -24,10 +24,11 @@ type SablierMiddleware struct {
 // New function creates the configuration
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
 	req, err := config.BuildRequest(name)
-
 	if err != nil {
 		return nil, err
 	}
+  
+	req.Header.Set("User-Agent", "sablier-traefik-plugin/"+Version)
 
 	var keepAliveInterval time.Duration
 	if config.KeepAliveInterval != "" {
@@ -65,7 +66,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
-	sablierRequest := sm.request.Clone(context.TODO())
+	sablierRequest := sm.request.Clone(req.Context())
 
 	resp, err := sm.client.Do(sablierRequest)
 	if err != nil {
@@ -116,6 +117,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			}
 		} else {
 			conditonalResponseWriter.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+			conditonalResponseWriter.WriteHeader(resp.StatusCode)
 			_, err := io.Copy(conditonalResponseWriter, resp.Body)
 			if err != nil {
 				http.Error(conditonalResponseWriter, err.Error(), http.StatusInternalServerError)

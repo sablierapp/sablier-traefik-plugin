@@ -20,12 +20,14 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 	type sablier struct {
 		headers map[string]string
 		body    string
+		code    int
 	}
 	tests := []struct {
 		name     string
 		fields   fields
 		sablier  sablier
 		expected string
+		method   string
 		code     int
 	}{
 		{
@@ -43,6 +45,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 				},
@@ -64,6 +67,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 				},
@@ -84,6 +88,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 				},
@@ -105,6 +110,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Blocking:        &BlockingConfiguration{},
 				},
@@ -126,6 +132,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					_, _ = fmt.Fprint(w, "response from service")
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Blocking:        &BlockingConfiguration{},
 				},
@@ -147,6 +154,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Blocking:        &BlockingConfiguration{},
 				},
@@ -169,6 +177,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 					IgnoreUserAgent: "curl",
@@ -195,6 +204,7 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 
 				}),
 				Config: &Config{
+					Names:           "nginx",
 					SessionDuration: "1m",
 					Dynamic:         &DynamicConfiguration{},
 					IgnoreUserAgent: "curl",
@@ -206,12 +216,62 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 			expected: "response from service",
 			code:     200,
 		},
+		{
+			name: "sablier response non-200 status code is forwarded when not ready",
+			sablier: sablier{
+				headers: map[string]string{
+					"X-Sablier-Session-Status": "not-ready",
+				},
+				body: "loading page",
+				code: http.StatusAccepted,
+			},
+			fields: fields{
+				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+					_, _ = fmt.Fprint(w, "response from service")
+				}),
+				Config: &Config{
+					Names:           "nginx",
+					SessionDuration: "1m",
+					Dynamic:         &DynamicConfiguration{},
+				},
+			},
+			expected: "loading page",
+			code:     http.StatusAccepted,
+		},
+		{
+			name: "blocking mode POST returns 307 when session ready but backend 503",
+			sablier: sablier{
+				headers: map[string]string{
+					"X-Sablier-Session-Status": "ready",
+				},
+				body: "response from sablier",
+			},
+			method: http.MethodPost,
+			fields: fields{
+				Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// No httptrace callback — simulates Traefik 503 (no backend in pool),
+					// so conditonalResponseWriter.ready stays false.
+					w.WriteHeader(http.StatusServiceUnavailable)
+				}),
+				Config: &Config{
+					Names:           "nginx",
+					SessionDuration: "1m",
+					Blocking:        &BlockingConfiguration{},
+				},
+			},
+			expected: "Temporary Redirect",
+			code:     http.StatusTemporaryRedirect,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				for key, value := range tt.sablier.headers {
 					w.Header().Add(key, value)
+				}
+				if tt.sablier.code != 0 {
+					w.WriteHeader(tt.sablier.code)
 				}
 				_, err := w.Write([]byte(tt.sablier.body))
 				if err != nil {
@@ -227,7 +287,11 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 				panic(err)
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/my-nginx", nil)
+			method := http.MethodGet
+			if tt.method != "" {
+				method = tt.method
+			}
+			req := httptest.NewRequest(method, "/my-nginx", nil)
 			w := httptest.NewRecorder()
 
 			if tt.fields.Headers != nil {
