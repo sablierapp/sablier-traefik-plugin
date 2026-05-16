@@ -51,7 +51,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
-	sablierRequest := sm.request.Clone(context.TODO())
+	sablierRequest := sm.request.Clone(req.Context())
 
 	resp, err := sm.client.Do(sablierRequest)
 	if err != nil {
@@ -143,6 +143,12 @@ func (r *responseWriter) WriteHeader(code int) {
 		// inside Traefik already
 		return
 	}
+
+	// Once we commit to writing any non-503 status, all subsequent Write calls
+	// must reach the client. This is critical for streaming protocols (SSE,
+	// WebSocket handshake) where Traefik may call WriteHeader(200) and then
+	// stream the body without the httptrace WroteHeaders callback firing.
+	r.ready = true
 
 	headers := r.responseWriter.Header()
 	for header, value := range r.headers {
