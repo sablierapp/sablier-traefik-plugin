@@ -57,6 +57,7 @@ type Config struct {
 	Group             string `yaml:"group"`
 	SessionDuration   string `yaml:"sessionDuration"`
 	KeepAliveInterval string `yaml:"keepAliveInterval"`
+	FailOpen          bool   `yaml:"failOpen"`
 	splittedNames     []string
 	Dynamic           *DynamicConfiguration  `yaml:"dynamic"`
 	Blocking          *BlockingConfiguration `yaml:"blocking"`
@@ -70,6 +71,7 @@ func CreateConfig() *Config {
 		Group:             "",
 		SessionDuration:   "",
 		KeepAliveInterval: "",
+		FailOpen:          false,
 		splittedNames:     []string{},
 		Dynamic:           nil,
 		Blocking:          nil,

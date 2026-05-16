@@ -71,6 +71,7 @@ http:
           group: my-app-group
           sessionDuration: 1m
           keepAliveInterval: 30s
+          failOpen: false
           ignoreUserAgent:
             - curl
             - "(?i)uptimerobot"
@@ -87,6 +88,7 @@ http:
 | `group`           | string   | Yes      | -                      | Group name for managing multiple instances collectively                         >    |
 | `sessionDuration` | duration | No       | -                      | Duration to keep instances running after the last request (e.g., `1m`, `30s`, `2h`) |
 | `keepAliveInterval` | duration | No     | -                      | How often Sablier is pinged to renew the session while a long-lived connection (SSE, WebSocket, long-polling) is held. Should be shorter than `sessionDuration`. Disabled when omitted. |
+| `failOpen`        | boolean  | No       | `false`                | Pass requests through to the backend when Sablier is unreachable instead of returning `HTTP 500`. |
 | `dynamic.displayName`      | string   | No       | Middleware name | Display name shown on the waiting page                                  |
 | `dynamic.showDetails`      | boolean  | No       | Server default  | Show detailed information on the waiting page                           |
 | `dynamic.theme`            | string   | No       | Server default  | Theme for the waiting page (e.g., `hacker-terminal`, `ghost`, `matrix`) |
@@ -122,6 +124,7 @@ http:
           group: my-app-group               # Group name for managing instances collectively
           sessionDuration: 1m               # Session duration before shutting down instances
           keepAliveInterval: 30s            # (Optional) Re-ping Sablier every 30s to keep long-lived connections alive
+          failOpen: false                   # (Optional) Pass through when Sablier is unreachable instead of returning HTTP 500
           # Only one strategy can be used at a time
           # Declare either `dynamic` or `blocking`, not both
           ignoreUserAgent:                          # (Optional) List of regexp patterns; matching UAs are silently ignored

@@ -323,6 +323,77 @@ func TestSablierMiddleware_ServeHTTP(t *testing.T) {
 	}
 }
 
+func TestSablierMiddleware_ServeHTTP_FailOpen(t *testing.T) {
+	closedSablier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	sablierURL := closedSablier.URL
+	closedSablier.Close()
+
+	t.Run("passes through to backend when Sablier is unreachable and failOpen is enabled", func(t *testing.T) {
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Backend", "reached")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = fmt.Fprint(w, "response from service")
+		})
+
+		sm, err := New(context.Background(), next, &Config{
+			SablierURL:      sablierURL,
+			Names:           "nginx",
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+			FailOpen:        true,
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		w := httptest.NewRecorder()
+		sm.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+		res := w.Result()
+		defer res.Body.Close() //nolint:errcheck
+
+		if res.StatusCode != http.StatusAccepted {
+			t.Fatalf("expected status %d, got %d", http.StatusAccepted, res.StatusCode)
+		}
+		if got := res.Header.Get("X-Backend"); got != "reached" {
+			t.Errorf("expected backend header to be preserved, got %q", got)
+		}
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != "response from service" {
+			t.Errorf("expected backend body, got %q", body)
+		}
+	})
+
+	t.Run("returns 500 when Sablier is unreachable and failOpen is disabled", func(t *testing.T) {
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("next handler should not be called")
+		})
+
+		sm, err := New(context.Background(), next, &Config{
+			SablierURL:      sablierURL,
+			Names:           "nginx",
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		w := httptest.NewRecorder()
+		sm.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+		res := w.Result()
+		defer res.Body.Close() //nolint:errcheck
+
+		if res.StatusCode != http.StatusInternalServerError {
+			t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, res.StatusCode)
+		}
+	})
+}
+
 // TestSablierMiddleware_ServeHTTP_SSE tests Server-Sent Events streaming through the middleware.
 //
 // The critical behaviour under test is that SSE events are forwarded to the client when
