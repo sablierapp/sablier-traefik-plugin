@@ -61,7 +61,7 @@ func (c *Config) BuildRequest(middlewareName string) (*http.Request, error) {
 		c.splittedNames = names
 	}
 
-	if len(names) == 0 && len(c.Group) == 0 {
+	if len(c.splittedNames) == 0 && len(c.Group) == 0 {
 		return nil, fmt.Errorf("you must specify at least one name or a group")
 	}
 
@@ -153,7 +153,7 @@ func (c *Config) buildBlockingRequest() (*http.Request, error) {
 		_, err = time.ParseDuration(c.SessionDuration)
 
 		if err != nil {
-			return nil, fmt.Errorf("error parsing dynamic.sessionDuration: %v", err)
+			return nil, fmt.Errorf("error parsing blocking.sessionDuration: %v", err)
 		}
 
 		q.Add("session_duration", c.SessionDuration)
@@ -171,7 +171,7 @@ func (c *Config) buildBlockingRequest() (*http.Request, error) {
 		_, err := time.ParseDuration(c.Blocking.Timeout)
 
 		if err != nil {
-			return nil, fmt.Errorf("error paring blocking.timeout: %v", err)
+			return nil, fmt.Errorf("error parsing blocking.timeout: %v", err)
 		}
 
 		q.Add("timeout", c.Blocking.Timeout)

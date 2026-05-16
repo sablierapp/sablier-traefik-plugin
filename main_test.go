@@ -365,6 +365,7 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 
 		sm, err := New(context.Background(), next, &Config{
 			SablierURL:      sablierMockServer.URL,
+			Names:           "nginx",
 			SessionDuration: "1m",
 			Dynamic:         &DynamicConfiguration{},
 		}, "middleware")
@@ -416,6 +417,7 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 
 		sm, err := New(context.Background(), next, &Config{
 			SablierURL:      sablierMockServer.URL,
+			Names:           "nginx",
 			SessionDuration: "1m",
 			Dynamic:         &DynamicConfiguration{},
 		}, "middleware")
@@ -458,6 +460,7 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 
 		sm, err := New(context.Background(), next, &Config{
 			SablierURL:      sablierMockServer.URL,
+			Names:           "nginx",
 			SessionDuration: "1m",
 			Dynamic:         &DynamicConfiguration{},
 		}, "middleware")
@@ -514,6 +517,7 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 
 		sm, err := New(context.Background(), next, &Config{
 			SablierURL:      sablierMockServer.URL,
+			Names:           "nginx",
 			SessionDuration: "1m",
 			Dynamic:         &DynamicConfiguration{},
 		}, "middleware")
