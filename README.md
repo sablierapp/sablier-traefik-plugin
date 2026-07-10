@@ -94,6 +94,7 @@ http:
 | `dynamic.theme`            | string   | No       | Server default  | Theme for the waiting page (e.g., `hacker-terminal`, `ghost`, `matrix`) |
 | `dynamic.refreshFrequency` | duration | No       | Server default  | How often the waiting page checks if instances are ready                |
 | `blocking.timeout` | duration | No       | -       | Maximum time to wait for instances to become ready |
+| `poke` | object | No | - | Poke strategy: start instances and immediately forward the request without waiting for readiness. |
 | `ignoreUserAgent` | string or string\[\] | No     | -        | List of [Go regexp](https://pkg.go.dev/regexp/syntax) patterns. Requests whose `User-Agent` matches any pattern receive an immediate `HTTP 200` without waking the container. Can be specified as a YAML list (preferred) or as a single string (backward-compatible). Patterns are case-sensitive unless the `(?i)` flag is used. |
 
 ## Usage
@@ -126,7 +127,7 @@ http:
           keepAliveInterval: 30s            # (Optional) Re-ping Sablier every 30s to keep long-lived connections alive
           failOpen: false                   # (Optional) Pass through when Sablier is unreachable instead of returning HTTP 500
           # Only one strategy can be used at a time
-          # Declare either `dynamic` or `blocking`, not both
+          # Declare either `dynamic`, `blocking`, or `poke`
           ignoreUserAgent:                          # (Optional) List of regexp patterns; matching UAs are silently ignored
             - curl
             - "(?i)uptimerobot"
@@ -142,6 +143,9 @@ http:
           # Blocking strategy: waits for services to start (up to the timeout limit)
           # blocking: 
           #   timeout: 1m
+
+          # Poke strategy: starts services and immediately forwards the request
+          # poke: {}
 ```
 
 <!-- TODO: Add usage example in a route -->
