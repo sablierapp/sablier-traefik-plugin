@@ -970,3 +970,78 @@ func TestSablierMiddleware_KeepAlive(t *testing.T) {
 		}
 	})
 }
+
+func TestResponseWriter_WriteHeader_PreservesBackendSetCookie(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	rw := newResponseWriter(recorder)
+
+	// A handler running before the backend replied writes into the buffered
+	// headers — this is what Traefik's sticky-session load balancer does
+	// right before proxying the request.
+	http.SetCookie(rw, &http.Cookie{Name: "lb", Value: "server-1", Path: "/"})
+
+	// The reverse proxy sent the request (httptrace fired) and copies the
+	// backend response headers onto the real writer.
+	rw.ready = true
+	rw.Header().Add("Set-Cookie", "state=abc123; Path=/; HttpOnly")
+
+	rw.WriteHeader(http.StatusFound)
+
+	cookies := recorder.Header().Values("Set-Cookie")
+	if len(cookies) != 2 {
+		t.Fatalf("expected both the sticky and the backend Set-Cookie headers, got %d: %v", len(cookies), cookies)
+	}
+}
+
+func TestSablierMiddleware_ServeHTTP_PreservesBackendSetCookie(t *testing.T) {
+	readySablier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("X-Sablier-Session-Status", "ready")
+		_, _ = w.Write([]byte("ready"))
+	}))
+	defer readySablier.Close()
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// What Traefik's sticky-session load balancer does before proxying:
+		// the cookie lands in the buffered headers (writer not ready yet).
+		http.SetCookie(w, &http.Cookie{Name: "lb", Value: "server-1", Path: "/"})
+
+		// The proxy sends the request to the backend...
+		httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+
+		// ...and copies the backend response headers and status.
+		w.Header().Add("Set-Cookie", "state=abc123; Path=/; HttpOnly")
+		w.WriteHeader(http.StatusFound)
+	})
+
+	sm, err := New(context.Background(), next, &Config{
+		SablierURL:      readySablier.URL,
+		Names:           "nginx",
+		SessionDuration: "1m",
+		Dynamic:         &DynamicConfiguration{},
+	}, "middleware")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	sm.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+	res := w.Result()
+	defer res.Body.Close() //nolint:errcheck
+
+	cookies := res.Header.Values("Set-Cookie")
+	if len(cookies) != 2 {
+		t.Fatalf("expected both the sticky and the backend Set-Cookie headers, got %d: %v", len(cookies), cookies)
+	}
+	for _, want := range []string{"lb=server-1", "state=abc123"} {
+		found := false
+		for _, c := range cookies {
+			if strings.HasPrefix(c, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected a Set-Cookie header starting with %q, got %v", want, cookies)
+		}
+	}
+}
