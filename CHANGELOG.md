@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.1](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.3.0...v1.3.1) (2026-08-18)
+
+
+### Chores
+
+* **deps:** bump actions/checkout from 6.0.2 to 7.0.1 ([#56](https://github.com/sablierapp/sablier-traefik-plugin/issues/56)) ([7885d1b](https://github.com/sablierapp/sablier-traefik-plugin/commit/7885d1bc9905a0a5a92b722c783e44e1ef002d62))
+* **deps:** bump actions/create-github-app-token from 3.1.1 to 3.2.0 ([#45](https://github.com/sablierapp/sablier-traefik-plugin/issues/45)) ([c6c6322](https://github.com/sablierapp/sablier-traefik-plugin/commit/c6c63228454ef7ab30fb0061ece5473520d18e89))
+* **deps:** bump actions/setup-go from 6.4.0 to 7.0.0 ([#55](https://github.com/sablierapp/sablier-traefik-plugin/issues/55)) ([8c70a43](https://github.com/sablierapp/sablier-traefik-plugin/commit/8c70a4326e51337c4fb6c3447caa5ff8022982dd))
+* **deps:** bump golangci/golangci-lint-action from 9.2.0 to 9.2.1 ([#46](https://github.com/sablierapp/sablier-traefik-plugin/issues/46)) ([741b778](https://github.com/sablierapp/sablier-traefik-plugin/commit/741b778e110fe78a5fea98a74a64235582631e4f))
+* **deps:** bump golangci/golangci-lint-action from 9.2.1 to 9.3.0 ([#53](https://github.com/sablierapp/sablier-traefik-plugin/issues/53)) ([4a52bc9](https://github.com/sablierapp/sablier-traefik-plugin/commit/4a52bc9294540de09a31e4c8e4cba0359ca3cd02))
+
 ## [1.3.0](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.2.0...v1.3.0) (2026-05-16)
 
 
