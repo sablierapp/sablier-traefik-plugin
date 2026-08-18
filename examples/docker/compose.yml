@@ -5,7 +5,7 @@ services:
     command:
       # Uncomment the following lines to use the released version of the plugin
       # - --experimental.plugins.sablier.modulename=github.com/sablierapp/sablier-traefik-plugin
-      # - --experimental.plugins.sablier.version=v1.3.0 # x-release-please-version
+      # - --experimental.plugins.sablier.version=v1.3.1 # x-release-please-version
       # Comment the following line to use the released version of the plugin
       - --experimental.localPlugins.sablier.moduleName=github.com/sablierapp/sablier-traefik-plugin
       - --entryPoints.http.address=:80
