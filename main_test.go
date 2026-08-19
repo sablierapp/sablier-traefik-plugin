@@ -970,3 +970,46 @@ func TestSablierMiddleware_KeepAlive(t *testing.T) {
 		}
 	})
 }
+
+func TestSablierMiddleware_ServeHTTP_WaitingPageContentTypeAfterLB503(t *testing.T) {
+	// Session is "ready" for Sablier (instances started) but the Kubernetes
+	// Service still has no endpoint (pods not Ready yet) — the request reaches
+	// the load balancer, which aborts with a 503.
+	readySablier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("X-Sablier-Session-Status", "ready")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<!DOCTYPE html><html>waiting page</html>"))
+	}))
+	defer readySablier.Close()
+
+	// What Traefik's load balancer does when the (scaled-to-zero) service has
+	// no endpoint: http.Error writes "Content-Type: text/plain; charset=utf-8"
+	// and "X-Content-Type-Options: nosniff" — into the buffered headers, since
+	// no backend was reached and the writer is not ready.
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no available server", http.StatusServiceUnavailable)
+	})
+
+	sm, err := New(context.Background(), next, &Config{
+		SablierURL:      readySablier.URL,
+		Names:           "nginx",
+		SessionDuration: "1m",
+		Dynamic:         &DynamicConfiguration{},
+	}, "middleware")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	sm.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+	res := w.Result()
+	defer res.Body.Close() //nolint:errcheck
+
+	if got := res.Header.Get("Content-Type"); got != "text/html" {
+		t.Errorf("expected the waiting page Content-Type %q, got %q", "text/html", got)
+	}
+	if got := res.Header.Get("X-Content-Type-Options"); got != "" {
+		t.Errorf("expected no X-Content-Type-Options leaked from the discarded 503, got %q", got)
+	}
+}

@@ -191,6 +191,16 @@ func (r *responseWriter) WriteHeader(code int) {
 		// will never return false in case there was a connection established to
 		// the backend server and so we can be sure that the 503 was produced
 		// inside Traefik already
+		//
+		// The whole 503 response is discarded: its body is dropped by Write
+		// and its status is never forwarded, so the headers it wrote must be
+		// dropped too. http.Error — used by Traefik's load balancer when the
+		// service has no available server — writes "Content-Type: text/plain;
+		// charset=utf-8" and "X-Content-Type-Options: nosniff" into the
+		// buffered headers; left in place, they would leak into the waiting
+		// page on the final flush and override its text/html Content-Type
+		// (the page then renders as plain text).
+		r.headers = make(http.Header)
 		return
 	}
 
