@@ -202,7 +202,18 @@ func (r *responseWriter) WriteHeader(code int) {
 
 	headers := r.responseWriter.Header()
 	for header, value := range r.headers {
-		headers[header] = value
+		// Set-Cookie is multi-valued: each value is an independent cookie.
+		// The buffered map may hold cookies written before the backend
+		// replied (e.g. Traefik's sticky-session cookie, written by the
+		// load balancer before proxying), while the real writer already
+		// holds the cookies of the backend response. Overwriting would
+		// drop the backend cookies (e.g. an OIDC state cookie), so append
+		// instead.
+		if header == "Set-Cookie" {
+			headers[header] = append(headers[header], value...)
+		} else {
+			headers[header] = value
+		}
 	}
 
 	r.responseWriter.WriteHeader(code)
