@@ -44,6 +44,7 @@ type DynamicConfiguration struct {
 	ShowDetails      *bool  `yaml:"showDetails"`
 	Theme            string `yaml:"theme"`
 	RefreshFrequency string `yaml:"refreshFrequency"`
+	ReadyOnStart     *bool  `yaml:"readyOnStart"`
 }
 
 type BlockingConfiguration struct {
@@ -163,6 +164,10 @@ func (c *Config) buildDynamicRequest(middlewareName string) (*http.Request, erro
 
 	if c.Dynamic.ShowDetails != nil {
 		q.Add("show_details", strconv.FormatBool(*c.Dynamic.ShowDetails))
+	}
+
+	if c.Dynamic.ReadyOnStart != nil {
+		q.Add("ready_on_start", strconv.FormatBool(*c.Dynamic.ReadyOnStart))
 	}
 
 	request.URL.RawQuery = q.Encode()
