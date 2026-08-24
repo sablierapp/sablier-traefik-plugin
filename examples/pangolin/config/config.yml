@@ -1,0 +1,37 @@
+# Minimal Pangolin configuration for a local, HTTP-only run.
+# Reference: https://docs.pangolin.net/
+
+# Required even though this example runs no tunnel: Pangolin validates the
+# block unconditionally. No gerbil/newt container is started here, because the
+# workload runs on the same Docker host as Traefik (a "Local" site).
+gerbil:
+    start_port: 51820
+    base_endpoint: "pangolin.localhost"
+
+app:
+    dashboard_url: "http://pangolin.localhost"
+    log_level: "info"
+    telemetry:
+        anonymous_usage: false
+
+domains:
+    domain1:
+        base_domain: "localhost"
+
+server:
+    secret: "sablier-pangolin-example-secret-change-me"
+    cors:
+        origins: ["http://pangolin.localhost"]
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+        allowed_headers: ["X-CSRF-Token", "Content-Type"]
+        credentials: false
+
+# NOTE: `traefik.additional_middlewares` would attach a middleware to EVERY
+# resource Pangolin generates. This example attaches Sablier to one resource
+# via Middleware Manager instead — see README.md.
+
+flags:
+    require_email_verification: false
+    disable_signup_without_invite: false
+    disable_user_create_org: false
+    allow_raw_resources: true

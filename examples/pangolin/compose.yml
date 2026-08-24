@@ -1,0 +1,80 @@
+name: sablier-pangolin-example
+
+services:
+  # Pangolin owns the Traefik dynamic configuration: it serves routers,
+  # services and middlewares from its database over the HTTP provider.
+  pangolin:
+    image: fosrl/pangolin:1.21.1
+    container_name: pangolin
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/"]
+      interval: "3s"
+      timeout: "3s"
+      retries: 15
+
+  traefik:
+    image: traefik:v3.7
+    container_name: traefik
+    restart: unless-stopped
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    command:
+      - --configFile=/etc/traefik/traefik_config.yml
+    ports:
+      - "80:80"
+      - "8080:8080" # Traefik dashboard, used to inspect what Pangolin generates
+    volumes:
+      - ./config/traefik:/etc/traefik:ro
+      # Uncomment to test your local working copy instead of the released plugin.
+      # See the `experimental` block in config/traefik/traefik_config.yml.
+      # - '../..:/plugins-local/src/github.com/sablierapp/sablier-traefik-plugin'
+
+  # Attaches middlewares to individual Pangolin resources. It reads resources
+  # from Pangolin's internal API and re-serves Traefik's dynamic configuration
+  # with per-resource overrides — which is what Traefik's http provider points
+  # at (see config/traefik/traefik_config.yml).
+  middleware-manager:
+    image: hhftechnology/middleware-manager:v4.5.0
+    container_name: middleware-manager
+    restart: unless-stopped
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    environment:
+      - ACTIVE_DATA_SOURCE=pangolin
+      - PANGOLIN_API_URL=http://pangolin:3001/api/v1
+      - TRAEFIK_STATIC_CONFIG_PATH=/etc/traefik/traefik_config.yml
+      - TRAEFIK_CONF_DIR=/conf
+      - DB_PATH=/data/middleware.db
+      - PORT=3456
+    ports:
+      - "3456:3456" # Middleware Manager UI
+    volumes:
+      - ./data:/data
+      - ./config/middleware-manager:/app/config
+      - ./config/traefik:/etc/traefik # writable: it can install Traefik plugins
+
+  sablier:
+    image: sablierapp/sablier:1.17.0
+    container_name: sablier
+    command:
+      - start
+      - --provider.name=docker
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock'
+
+  # The on-demand workload. Sablier stops it shortly after boot, wakes it on
+  # the first request, and shuts it back down after `sessionDuration`.
+  mimic:
+    image: sablierapp/mimic:v0.3.3
+    container_name: mimic
+    healthcheck:
+      test: ["CMD", "/mimic", "healthcheck"]
+      interval: 5s
+    labels:
+      - sablier.enable=true
+      - sablier.group=mimic
