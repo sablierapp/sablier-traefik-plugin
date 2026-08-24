@@ -18,6 +18,7 @@ This plugin is available in the [Traefik Plugin Catalog](https://plugins.traefik
   - [Docker](#docker)
   - [Docker Swarm](#docker-swarm)
   - [Kubernetes](#kubernetes)
+  - [Pangolin](#pangolin)
 - [Other Reverse Proxy Plugins](#other-reverse-proxy-plugins)
   - [Apache APISIX](#apache-apisix)
   - [Caddy](#caddy)
@@ -104,6 +105,7 @@ The plugin can be configured in different ways depending on your deployment cont
 - **[Docker](#docker)**: Label-based configuration for Docker containers (requires Traefik v3.6.0+)
 - **[Docker Swarm](#docker-swarm)**: Swarm-specific configuration with centralized middleware definition
 - **[Kubernetes](#kubernetes)**: Kubernetes-native configuration using annotations and IngressRoute
+- **[Pangolin](#pangolin)**: Attaching the middleware to a Pangolin-managed resource
 
 Choose the section that matches your deployment environment below.
 
@@ -283,6 +285,28 @@ whoami:
 - The blocking strategy is not yet supported due to Traefik's pod IP handling.
 
 Refer to the [Kubernetes E2E test script](./e2e/kubernetes.sh) for a working example.
+
+### Pangolin
+
+[Pangolin](https://github.com/fosrl/pangolin) drives a Traefik v3 instance whose dynamic configuration it generates from its own database, so this plugin is all you need — there is nothing Pangolin-specific to install.
+
+> [!TIP]
+> For a complete working example, see the [pangolin example](./examples/pangolin/).
+
+Load the plugin next to Pangolin's own `badger` plugin in `config/traefik/traefik_config.yml`, declare the middleware in `config/traefik/dynamic_config.yml` as shown under [Dynamic Configuration](#dynamic-configuration), then attach it to your resources from `config/config.yml`:
+
+```yaml
+traefik:
+    additional_middlewares:
+        - my-sablier@file
+```
+
+The `@file` suffix is required: the middleware lives in Traefik's file provider while Pangolin's routers live in the `http` provider.
+
+⚠️ **Limitations**
+
+- `additional_middlewares` is **global** — Pangolin appends it to every HTTP resource it generates, and has no per-resource middleware field. To wake more than one app independently, shadow the generated router with a higher-priority one in the file provider; the [example README](./examples/pangolin/README.md#option-b--one-resource-at-a-time) shows how.
+- Leave Pangolin *target* health checks off for Sablier-managed targets: Pangolin drops targets it considers unhealthy from the generated config, and a stopped container is exactly that.
 
 ## Other Reverse Proxy Plugins
 

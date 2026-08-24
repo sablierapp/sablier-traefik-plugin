@@ -1,0 +1,8 @@
+# Pangolin runtime state, created on first boot
+config/db/
+config/logs/
+config/key
+
+# The root .gitignore has a bare `traefik` rule (for the downloaded binary),
+# which would otherwise swallow this example's Traefik configuration.
+!config/traefik/
