@@ -303,9 +303,11 @@ traefik:
 
 The `@file` suffix is required: the middleware lives in Traefik's file provider while Pangolin's routers live in the `http` provider.
 
+Pangolin has no per-resource middleware field, so `additional_middlewares` is **global** — it is appended to every HTTP resource it generates. To attach Sablier to individual resources, either use [Middleware Manager](https://github.com/hhftechnology/middleware-manager) or shadow the generated router in Traefik's file provider; the [example README](./examples/pangolin/README.md#how-the-middleware-is-attached) walks through all three, with the trade-offs.
+
 ⚠️ **Limitations**
 
-- `additional_middlewares` is **global** — Pangolin appends it to every HTTP resource it generates, and has no per-resource middleware field. To wake more than one app independently, shadow the generated router with a higher-priority one in the file provider; the [example README](./examples/pangolin/README.md#option-b--one-resource-at-a-time) shows how.
+- Middleware Manager always places its additions **before** the router's existing middlewares, so Sablier runs before Pangolin's `badger` — meaning an unauthenticated request can wake the container. `priority` cannot change this. Use `additional_middlewares` or a hand-written router if authentication must happen first.
 - Leave Pangolin *target* health checks off for Sablier-managed targets: Pangolin drops targets it considers unhealthy from the generated config, and a stopped container is exactly that.
 
 ## Other Reverse Proxy Plugins

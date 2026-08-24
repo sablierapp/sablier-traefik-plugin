@@ -26,16 +26,9 @@ server:
         allowed_headers: ["X-CSRF-Token", "Content-Type"]
         credentials: false
 
-traefik:
-    # Pangolin appends these middlewares to every router it generates, right
-    # after `badger`. `@file` points at the middleware declared in
-    # config/traefik/dynamic_config.yml.
-    #
-    # NOTE: this list is GLOBAL. It is the right choice here because this
-    # example has exactly one resource, but see the README for how to attach
-    # Sablier to individual resources instead.
-    additional_middlewares:
-        - sablier-mimic@file
+# NOTE: `traefik.additional_middlewares` would attach a middleware to EVERY
+# resource Pangolin generates. This example attaches Sablier to one resource
+# via Middleware Manager instead — see README.md.
 
 flags:
     require_email_verification: false

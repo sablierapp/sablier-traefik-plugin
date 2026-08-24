@@ -33,6 +33,31 @@ services:
       # See the `experimental` block in config/traefik/traefik_config.yml.
       # - '../..:/plugins-local/src/github.com/sablierapp/sablier-traefik-plugin'
 
+  # Attaches middlewares to individual Pangolin resources. It reads resources
+  # from Pangolin's internal API and re-serves Traefik's dynamic configuration
+  # with per-resource overrides — which is what Traefik's http provider points
+  # at (see config/traefik/traefik_config.yml).
+  middleware-manager:
+    image: hhftechnology/middleware-manager:v4.5.0
+    container_name: middleware-manager
+    restart: unless-stopped
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    environment:
+      - ACTIVE_DATA_SOURCE=pangolin
+      - PANGOLIN_API_URL=http://pangolin:3001/api/v1
+      - TRAEFIK_STATIC_CONFIG_PATH=/etc/traefik/traefik_config.yml
+      - TRAEFIK_CONF_DIR=/conf
+      - DB_PATH=/data/middleware.db
+      - PORT=3456
+    ports:
+      - "3456:3456" # Middleware Manager UI
+    volumes:
+      - ./data:/data
+      - ./config/middleware-manager:/app/config
+      - ./config/traefik:/etc/traefik # writable: it can install Traefik plugins
+
   sablier:
     image: sablierapp/sablier:1.17.0
     container_name: sablier
