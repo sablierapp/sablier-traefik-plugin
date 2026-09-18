@@ -38,14 +38,14 @@ experimental:
   plugins:
     sablier:
       moduleName: "github.com/sablierapp/sablier-traefik-plugin"
-      version: "v1.3.0"
+      version: "v1.3.1"
 ```
 
 Or using CLI arguments:
 
 ```yaml
 --experimental.plugins.sablier.moduleName=github.com/sablierapp/sablier-traefik-plugin
---experimental.plugins.sablier.version=v1.3.0
+--experimental.plugins.sablier.version=v1.3.1
 ```
 <!-- x-release-please-end -->
 
@@ -226,10 +226,10 @@ Enable the Swarm provider with empty services support:
 <!-- x-release-please-start-version -->
 ```yaml
 traefik:
-  image: traefik:v1.3.0
+  image: traefik:v1.3.1
   command:
     - --experimental.plugins.sablier.modulename=github.com/sablierapp/sablier-traefik-plugin
-    - --experimental.plugins.sablier.version=v1.3.0
+    - --experimental.plugins.sablier.version=v1.3.1
     - --entryPoints.http.address=:80
     - --providers.swarm=true
     - --providers.swarm.refreshSeconds=1
