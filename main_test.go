@@ -3,11 +3,15 @@ package sablier_traefik_plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1011,5 +1015,138 @@ func TestSablierMiddleware_ServeHTTP_WaitingPageContentTypeAfterLB503(t *testing
 	}
 	if got := res.Header.Get("X-Content-Type-Options"); got != "" {
 		t.Errorf("expected no X-Content-Type-Options leaked from the discarded 503, got %q", got)
+	}
+}
+
+// traefikProxy forwards requests to target the way Traefik forwards them to a
+// server: through an httputil.ReverseProxy whose error handler answers like
+// Traefik's (pkg/proxy/httputil/proxy.go) when the request cannot be forwarded:
+// 502 for network errors, 504 for timeouts and 500 for any other error.
+func traefikProxy(t *testing.T, target string) http.Handler {
+	t.Helper()
+	targetURL, err := url.Parse(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		code := http.StatusInternalServerError
+		var netErr net.Error
+		if errors.As(err, &netErr) {
+			code = http.StatusBadGateway
+			if netErr.Timeout() {
+				code = http.StatusGatewayTimeout
+			}
+		}
+		w.WriteHeader(code)
+		_, _ = w.Write([]byte(http.StatusText(code)))
+	}
+	return proxy
+}
+
+// TestSablierMiddleware_ServeHTTP_BackendNotReachedYet reproduces issue #43: with the
+// blocking strategy, the first request to a stopped container waits for it to start,
+// then gets a 500 instead of the container's response.
+//
+// Traefik serves a request with the configuration that was live when it arrived. While
+// the container is stopped, the service points to a server without a URL, so once
+// Sablier reports the session as ready, the blocked request is still forwarded to that
+// stale server and Traefik's proxy answers 500 ("unsupported protocol scheme").
+// Like the 503 of an empty load balancer, that error comes from Traefik before any
+// backend was reached, so the plugin must answer with its own response instead:
+// a redirect in blocking mode, the waiting page in dynamic mode.
+func TestSablierMiddleware_ServeHTTP_BackendNotReachedYet(t *testing.T) {
+	readySablier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Sablier-Session-Status", "ready")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("waiting page"))
+	}))
+	defer readySablier.Close()
+
+	refusingServer := httptest.NewServer(http.NotFoundHandler())
+	refusingServerURL := refusingServer.URL
+	refusingServer.Close()
+
+	failingBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "backend failure", http.StatusInternalServerError)
+	}))
+	defer failingBackend.Close()
+
+	tests := []struct {
+		name     string
+		server   string
+		blocking bool
+		code     int
+		body     string
+		location string
+	}{
+		{
+			name:     "blocking redirects when the server has no URL (stopped container)",
+			server:   "",
+			blocking: true,
+			code:     http.StatusFound,
+			body:     "Found",
+			location: "/my-nginx",
+		},
+		{
+			name:     "blocking redirects when the server refuses connections",
+			server:   refusingServerURL,
+			blocking: true,
+			code:     http.StatusFound,
+			body:     "Found",
+			location: "/my-nginx",
+		},
+		{
+			name:   "dynamic shows the waiting page when the server has no URL (stopped container)",
+			server: "",
+			code:   http.StatusOK,
+			body:   "waiting page",
+		},
+		{
+			name:     "blocking forwards an error returned by the backend",
+			server:   failingBackend.URL,
+			blocking: true,
+			code:     http.StatusInternalServerError,
+			body:     "backend failure\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				SablierURL:      readySablier.URL,
+				Names:           "nginx",
+				SessionDuration: "1m",
+			}
+			if tt.blocking {
+				config.Blocking = &BlockingConfiguration{}
+			} else {
+				config.Dynamic = &DynamicConfiguration{}
+			}
+
+			sm, err := New(context.Background(), traefikProxy(t, tt.server), config, "middleware")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			w := httptest.NewRecorder()
+			sm.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+			res := w.Result()
+			defer res.Body.Close() //nolint:errcheck
+
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.StatusCode != tt.code {
+				t.Errorf("expected status %d, got %d", tt.code, res.StatusCode)
+			}
+			if string(body) != tt.body {
+				t.Errorf("expected body %q, got %q", tt.body, body)
+			}
+			if got := res.Header.Get("Location"); got != tt.location {
+				t.Errorf("expected Location %q, got %q", tt.location, got)
+			}
+		})
 	}
 }

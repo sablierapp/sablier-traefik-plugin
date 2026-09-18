@@ -185,14 +185,15 @@ func (r *responseWriter) Write(buf []byte) (int, error) {
 }
 
 func (r *responseWriter) WriteHeader(code int) {
-	if !r.ready && code == http.StatusServiceUnavailable {
-		// We get a 503 HTTP Status Code when there is no backend server in the pool
-		// to which the request could be sent.  Also, note that r.ready
-		// will never return false in case there was a connection established to
-		// the backend server and so we can be sure that the 503 was produced
-		// inside Traefik already
+	if !r.ready && isForwardingError(code) {
+		// r.ready is still false, so the request never reached a backend server
+		// and this error was produced inside Traefik: a 503 from the load
+		// balancer when there is no server in the pool, or a 500, 502 or 504 from
+		// the proxy when it cannot forward the request, e.g. to the server of a
+		// container that was not running yet when the request arrived (the
+		// server has no URL and the proxy answers 500, issue #43).
 		//
-		// The whole 503 response is discarded: its body is dropped by Write
+		// The whole error response is discarded: its body is dropped by Write
 		// and its status is never forwarded, so the headers it wrote must be
 		// dropped too. http.Error — used by Traefik's load balancer when the
 		// service has no available server — writes "Content-Type: text/plain;
@@ -204,7 +205,7 @@ func (r *responseWriter) WriteHeader(code int) {
 		return
 	}
 
-	// Once we commit to writing any non-503 status, all subsequent Write calls
+	// Once we commit to writing any other status, all subsequent Write calls
 	// must reach the client. This is critical for streaming protocols (SSE,
 	// WebSocket handshake) where Traefik may call WriteHeader(200) and then
 	// stream the body without the httptrace WroteHeaders callback firing.
@@ -216,6 +217,16 @@ func (r *responseWriter) WriteHeader(code int) {
 	}
 
 	r.responseWriter.WriteHeader(code)
+}
+
+// isForwardingError reports whether code is one Traefik answers with when it
+// cannot forward a request to a backend server.
+func isForwardingError(code int) bool {
+	switch code {
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
 }
 
 func (r *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
