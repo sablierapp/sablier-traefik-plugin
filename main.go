@@ -114,6 +114,9 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 			go sm.keepAlive(req.Context())
 		}
 		trace := &httptrace.ClientTrace{
+			GetConn: func(hostPort string) {
+				conditonalResponseWriter.connecting = true
+			},
 			WroteHeaders: func() {
 				conditonalResponseWriter.ready = true
 			},
@@ -168,6 +171,8 @@ type responseWriter struct {
 	responseWriter http.ResponseWriter
 	headers        http.Header
 	ready          bool
+	// connecting is set once the proxy tries to connect to a backend server.
+	connecting bool
 }
 
 func (r *responseWriter) Header() http.Header {
@@ -185,14 +190,12 @@ func (r *responseWriter) Write(buf []byte) (int, error) {
 }
 
 func (r *responseWriter) WriteHeader(code int) {
-	if !r.ready && code == http.StatusServiceUnavailable {
-		// We get a 503 HTTP Status Code when there is no backend server in the pool
-		// to which the request could be sent.  Also, note that r.ready
-		// will never return false in case there was a connection established to
-		// the backend server and so we can be sure that the 503 was produced
-		// inside Traefik already
+	if !r.ready && r.noBackendYet(code) {
+		// r.ready is still false, so the request never reached a backend server
+		// and this error was produced inside Traefik because there is no backend
+		// server to forward the request to yet (see noBackendYet).
 		//
-		// The whole 503 response is discarded: its body is dropped by Write
+		// The whole error response is discarded: its body is dropped by Write
 		// and its status is never forwarded, so the headers it wrote must be
 		// dropped too. http.Error — used by Traefik's load balancer when the
 		// service has no available server — writes "Content-Type: text/plain;
@@ -204,7 +207,7 @@ func (r *responseWriter) WriteHeader(code int) {
 		return
 	}
 
-	// Once we commit to writing any non-503 status, all subsequent Write calls
+	// Once we commit to writing any other status, all subsequent Write calls
 	// must reach the client. This is critical for streaming protocols (SSE,
 	// WebSocket handshake) where Traefik may call WriteHeader(200) and then
 	// stream the body without the httptrace WroteHeaders callback firing.
@@ -227,6 +230,27 @@ func (r *responseWriter) WriteHeader(code int) {
 	}
 
 	r.responseWriter.WriteHeader(code)
+}
+
+// noBackendYet reports whether code is an error Traefik answers with when there
+// is no backend server to forward the request to yet:
+//   - 503 from the load balancer when there is no server in the pool.
+//   - 500 from the proxy when it fails before trying to connect to the server,
+//     which happens when the server has no URL because the container was not
+//     running when the request arrived (issue #43).
+//
+// Errors raised once the proxy tries to connect to a server, such as a 502 when
+// nothing listens on the configured port, are forwarded: retrying cannot fix
+// them, and the plugin would keep redirecting to itself or showing the waiting
+// page.
+func (r *responseWriter) noBackendYet(code int) bool {
+	switch code {
+	case http.StatusServiceUnavailable:
+		return true
+	case http.StatusInternalServerError:
+		return !r.connecting
+	}
+	return false
 }
 
 func (r *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
