@@ -1089,12 +1089,12 @@ func TestSablierMiddleware_ServeHTTP_BackendNotReachedYet(t *testing.T) {
 			location: "/my-nginx",
 		},
 		{
-			name:     "blocking redirects when the server refuses connections",
+			// e.g. a wrong port: redirecting would loop, as the server keeps refusing connections.
+			name:     "blocking forwards the error when the server refuses connections",
 			server:   refusingServerURL,
 			blocking: true,
-			code:     http.StatusFound,
-			body:     "Found",
-			location: "/my-nginx",
+			code:     http.StatusBadGateway,
+			body:     "Bad Gateway",
 		},
 		{
 			name:   "dynamic shows the waiting page when the server has no URL (stopped container)",
