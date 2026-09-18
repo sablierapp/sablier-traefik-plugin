@@ -80,6 +80,7 @@ http:
             showDetails: true
             theme: hacker-terminal
             refreshFrequency: 5s
+            readyOnStart: false
 ```
 
 | Option            | Type     | Required | Default                | Description                                                                         |
@@ -93,6 +94,7 @@ http:
 | `dynamic.showDetails`      | boolean  | No       | Server default  | Show detailed information on the waiting page                           |
 | `dynamic.theme`            | string   | No       | Server default  | Theme for the waiting page (e.g., `hacker-terminal`, `ghost`, `matrix`) |
 | `dynamic.refreshFrequency` | duration | No       | Server default  | How often the waiting page checks if instances are ready                |
+| `dynamic.readyOnStart` | boolean | No | `false` | Force `X-Sablier-Session-Status: ready` immediately regardless of instance health. No waiting page is shown. |
 | `blocking.timeout` | duration | No       | -       | Maximum time to wait for instances to become ready |
 | `ignoreUserAgent` | string or string\[\] | No     | -        | List of [Go regexp](https://pkg.go.dev/regexp/syntax) patterns. Requests whose `User-Agent` matches any pattern receive an immediate `HTTP 200` without waking the container. Can be specified as a YAML list (preferred) or as a single string (backward-compatible). Patterns are case-sensitive unless the `(?i)` flag is used. |
 

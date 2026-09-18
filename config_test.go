@@ -153,6 +153,18 @@ func TestConfig_BuildRequest(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "dynamic session with readyOnStart",
+			fields: fields{
+				SablierURL: "http://sablier:10000",
+				Names:      "nginx",
+				Dynamic: &traefik.DynamicConfiguration{
+					ReadyOnStart: &tru,
+				},
+			},
+			want:    createRequest("GET", "http://sablier:10000/api/strategies/dynamic?display_name=sablier-middleware&names=nginx&ready_on_start=true", nil),
+			wantErr: false,
+		},
+		{
 			name: "dynamic session without show details set",
 			fields: fields{
 				SablierURL:      "http://sablier:10000",
