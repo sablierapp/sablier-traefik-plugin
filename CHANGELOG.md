@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.3.1...v1.3.2) (2026-10-21)
+
+
+### Chores
+
+* **deps:** bump actions/create-github-app-token from 3.2.0 to 3.3.0 ([#65](https://github.com/sablierapp/sablier-traefik-plugin/issues/65)) ([e2f571c](https://github.com/sablierapp/sablier-traefik-plugin/commit/e2f571c034edf6dee2697ca12495894a332a8c36))
+
 ## [1.3.1](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.3.0...v1.3.1) (2026-09-18)
 
 
