@@ -1,0 +1,45 @@
+# Pangolin's Traefik static configuration, trimmed for a local HTTP-only run.
+# The only Sablier-specific addition is the `sablier` entry under
+# `experimental.plugins` below.
+
+api:
+  insecure: true
+  dashboard: true
+
+providers:
+  # Middleware Manager re-serves Pangolin's generated configuration with
+  # per-resource middleware attached. Point this back at
+  # http://pangolin:3001/api/v1/traefik-config to bypass it entirely.
+  http:
+    endpoint: "http://middleware-manager:3456/api/v1/traefik-config"
+    pollInterval: "5s"
+  # Hand-written. This is where the Sablier middleware is declared.
+  file:
+    filename: "/etc/traefik/dynamic_config.yml"
+
+experimental:
+  plugins:
+    badger:
+      moduleName: "github.com/fosrl/badger"
+      # Pinned: v1.6.x/v1.7.0 currently fail Traefik's plugin integrity check.
+      # Use whatever version your own Pangolin install shipped with.
+      version: "v1.5.0"
+    sablier:
+      moduleName: "github.com/sablierapp/sablier-traefik-plugin"
+      version: "v1.3.0" # x-release-please-version
+  # To test your local working copy instead, comment out the `sablier` entry
+  # above, uncomment the block below, and uncomment the plugins-local volume
+  # in compose.yml.
+  # localPlugins:
+  #   sablier:
+  #     moduleName: "github.com/sablierapp/sablier-traefik-plugin"
+
+log:
+  level: "INFO"
+
+entryPoints:
+  web:
+    address: ":80"
+
+serversTransport:
+  insecureSkipVerify: true
