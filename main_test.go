@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestSablierMiddleware_ServeHTTP(t *testing.T) {
@@ -394,6 +395,101 @@ func TestSablierMiddleware_ServeHTTP_FailOpen(t *testing.T) {
 
 		if res.StatusCode != http.StatusInternalServerError {
 			t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, res.StatusCode)
+		}
+	})
+}
+
+func TestSablierMiddleware_DialTimeout(t *testing.T) {
+	newMiddleware := func(t *testing.T, sablierURL, dialTimeout string, failOpen bool, next http.Handler) *SablierMiddleware {
+		t.Helper()
+		if next == nil {
+			next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+		}
+		handler, err := New(context.Background(), next, &Config{
+			SablierURL:      sablierURL,
+			Names:           "nginx",
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+			FailOpen:        failOpen,
+			DialTimeout:     dialTimeout,
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return handler.(*SablierMiddleware)
+	}
+
+	t.Run("rejects invalid values", func(t *testing.T) {
+		for _, value := range []string{"abc", "0s", "-1s"} {
+			_, err := New(context.Background(), nil, &Config{
+				SablierURL:  "http://sablier:10000",
+				Names:       "nginx",
+				Dynamic:     &DynamicConfiguration{},
+				DialTimeout: value,
+			}, "middleware")
+			if err == nil {
+				t.Errorf("expected an error for dialTimeout %q", value)
+			}
+		}
+	})
+
+	t.Run("uses the default transport when unset", func(t *testing.T) {
+		sm := newMiddleware(t, "http://sablier:10000", "", false, nil)
+		if sm.client.Transport != nil {
+			t.Errorf("expected the default transport, got %T", sm.client.Transport)
+		}
+	})
+
+	t.Run("shares one transport per timeout value", func(t *testing.T) {
+		a := newMiddleware(t, "http://sablier:10000", "2s", false, nil)
+		b := newMiddleware(t, "http://sablier:10000", "2s", false, nil)
+		c := newMiddleware(t, "http://sablier:10000", "3s", false, nil)
+		if a.client.Transport == nil || a.client.Transport != b.client.Transport {
+			t.Error("expected middlewares with the same dialTimeout to share a transport")
+		}
+		if a.client.Transport == c.client.Transport {
+			t.Error("expected middlewares with different dialTimeouts to use different transports")
+		}
+	})
+
+	t.Run("fails after the dial timeout when Sablier does not answer", func(t *testing.T) {
+		// 192.0.2.1 is reserved for documentation (RFC 5737) and not routed, so the SYN gets no answer.
+		sm := newMiddleware(t, "http://192.0.2.1:10000", "200ms", false, nil)
+
+		w := httptest.NewRecorder()
+		start := time.Now()
+		sm.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+		elapsed := time.Since(start)
+
+		if !strings.Contains(w.Body.String(), "i/o timeout") {
+			t.Skipf("192.0.2.1 does not drop packets in this environment: %s", w.Body.String())
+		}
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("expected status %d, got %d", http.StatusInternalServerError, w.Code)
+		}
+		if elapsed > 2*time.Second {
+			t.Errorf("expected the request to fail after ~200ms, took %s", elapsed)
+		}
+	})
+
+	t.Run("does not limit how long Sablier takes to respond", func(t *testing.T) {
+		sablier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(300 * time.Millisecond)
+			w.Header().Add("X-Sablier-Session-Status", "ready")
+		}))
+		defer sablier.Close()
+
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+			_, _ = fmt.Fprint(w, "response from service")
+		})
+		sm := newMiddleware(t, sablier.URL, "100ms", false, next)
+
+		w := httptest.NewRecorder()
+		sm.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+		if w.Code != http.StatusOK || w.Body.String() != "response from service" {
+			t.Errorf("expected the backend response, got %d %q", w.Code, w.Body.String())
 		}
 	})
 }
