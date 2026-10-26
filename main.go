@@ -10,6 +10,7 @@ import (
 	"net/http/httptrace"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -48,9 +49,19 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		return nil, err
 	}
 
+	transportOpts, err := parseTransportOptions(config)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{}
+	if transportOpts != (transportOptions{}) {
+		client.Transport = sharedTransport(transportOpts)
+	}
+
 	return &SablierMiddleware{
 		request: req,
-		client:  &http.Client{},
+		client:  client,
 		next:    next,
 		// there is no way to make blocking work in traefik without redirect so let's make it default
 		useRedirect:       config.Blocking != nil,
@@ -58,6 +69,64 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		ignoreUserAgents:  ignoreUserAgents,
 		keepAliveInterval: keepAliveInterval,
 	}, nil
+}
+
+// transportOptions holds the settings that need a custom HTTP transport to Sablier.
+// The zero value means Go's default transport is used.
+type transportOptions struct {
+	dialTimeout time.Duration
+}
+
+// parseTransportOptions reads the transport settings from config.
+func parseTransportOptions(config *Config) (transportOptions, error) {
+	var opts transportOptions
+	if config.DialTimeout != "" {
+		dialTimeout, err := time.ParseDuration(config.DialTimeout)
+		if err != nil {
+			return opts, fmt.Errorf("error parsing dialTimeout: %v", err)
+		}
+		if dialTimeout <= 0 {
+			return opts, fmt.Errorf("dialTimeout must be positive")
+		}
+		opts.dialTimeout = dialTimeout
+	}
+	return opts, nil
+}
+
+var (
+	sharedTransportsMu sync.Mutex
+	sharedTransports   = map[transportOptions]*http.Transport{}
+)
+
+// sharedTransport returns a copy of http.DefaultTransport with opts applied.
+//
+// Transports are shared per set of options because Traefik calls New for every middleware
+// on each configuration reload, and a transport per call would leave its idle
+// connections open until they time out.
+func sharedTransport(opts transportOptions) *http.Transport {
+	sharedTransportsMu.Lock()
+	defer sharedTransportsMu.Unlock()
+
+	if transport, ok := sharedTransports[opts]; ok {
+		return transport
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	// dialTimeout bounds only connection setup. Without it a connection to an unreachable
+	// Sablier address waits for the default 30s dial timeout. Requests can still take long,
+	// as they do with the blocking strategy.
+	if opts.dialTimeout > 0 {
+		dialer := &net.Dialer{Timeout: opts.dialTimeout, KeepAlive: 30 * time.Second}
+		// A closure rather than the method value dialer.DialContext: Yaegi, which Traefik uses
+		// to run plugins, gives that method value the wrong type and the plugin fails to load.
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, addr)
+		}
+	}
+
+	sharedTransports[opts] = transport
+	return transport
 }
 
 // compileIgnoreUserAgents compiles each pattern in the ignoreUserAgent config
