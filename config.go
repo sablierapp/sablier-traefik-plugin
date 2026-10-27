@@ -50,6 +50,9 @@ type BlockingConfiguration struct {
 	Timeout string `yaml:"timeout"`
 }
 
+type PokeConfiguration struct {
+}
+
 type Config struct {
 	SablierURL string `yaml:"sablierUrl"`
 	// Deprecated: use Group instead
@@ -62,6 +65,7 @@ type Config struct {
 	splittedNames     []string
 	Dynamic           *DynamicConfiguration  `yaml:"dynamic"`
 	Blocking          *BlockingConfiguration `yaml:"blocking"`
+	Poke              *PokeConfiguration     `yaml:"poke"`
 	IgnoreUserAgent   StringOrStringSlice    `yaml:"ignoreUserAgent" json:"ignoreUserAgent"`
 }
 
@@ -77,6 +81,7 @@ func CreateConfig() *Config {
 		splittedNames:     []string{},
 		Dynamic:           nil,
 		Blocking:          nil,
+		Poke:              nil,
 		IgnoreUserAgent:   StringOrStringSlice{},
 	}
 }
@@ -100,16 +105,30 @@ func (c *Config) BuildRequest(middlewareName string) (*http.Request, error) {
 		return nil, fmt.Errorf("you must specify at least one name or a group")
 	}
 
-	if c.Dynamic != nil && c.Blocking != nil {
-		return nil, fmt.Errorf("only supply one strategy: dynamic or blocking")
+	strategyCount := 0
+	if c.Dynamic != nil {
+		strategyCount++
+	}
+	if c.Blocking != nil {
+		strategyCount++
+	}
+	if c.Poke != nil {
+		strategyCount++
+	}
+	if strategyCount > 1 {
+		return nil, fmt.Errorf("only supply one strategy")
 	}
 
-	if c.Dynamic != nil {
+	switch {
+	case c.Dynamic != nil:
 		return c.buildDynamicRequest(middlewareName)
-	} else if c.Blocking != nil {
+	case c.Blocking != nil:
 		return c.buildBlockingRequest()
+	case c.Poke != nil:
+		return c.buildPokeRequest()
+	default:
+		return nil, fmt.Errorf("no strategy configured")
 	}
-	return nil, fmt.Errorf("no strategy configured")
 }
 
 func (c *Config) buildDynamicRequest(middlewareName string) (*http.Request, error) {
@@ -210,6 +229,39 @@ func (c *Config) buildBlockingRequest() (*http.Request, error) {
 		}
 
 		q.Add("timeout", c.Blocking.Timeout)
+	}
+
+	request.URL.RawQuery = q.Encode()
+
+	return request, nil
+}
+
+func (c *Config) buildPokeRequest() (*http.Request, error) {
+	if c.Poke == nil {
+		return nil, fmt.Errorf("poke config is nil")
+	}
+
+	request, err := http.NewRequest("GET", fmt.Sprintf("%s/api/strategies/poke", c.SablierURL), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	q := request.URL.Query()
+
+	if c.SessionDuration != "" {
+		_, err = time.ParseDuration(c.SessionDuration)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing poke.sessionDuration: %v", err)
+		}
+		q.Add("session_duration", c.SessionDuration)
+	}
+
+	for _, name := range c.splittedNames {
+		q.Add("names", name)
+	}
+
+	if c.Group != "" {
+		q.Add("group", c.Group)
 	}
 
 	request.URL.RawQuery = q.Encode()

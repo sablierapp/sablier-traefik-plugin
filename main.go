@@ -22,6 +22,7 @@ type SablierMiddleware struct {
 	failOpen          bool
 	ignoreUserAgents  []*regexp.Regexp
 	keepAliveInterval time.Duration
+	isPoke            bool
 }
 
 // New function creates the configuration
@@ -68,6 +69,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		failOpen:          config.FailOpen,
 		ignoreUserAgents:  ignoreUserAgents,
 		keepAliveInterval: keepAliveInterval,
+		isPoke:            config.Poke != nil,
 	}, nil
 }
 
@@ -177,7 +179,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 	useRedirect := false
 
-	if resp.Header.Get("X-Sablier-Session-Status") == "ready" {
+	if resp.Header.Get("X-Sablier-Session-Status") == "ready" || sm.isPoke {
 		// Check if the backend already received request data
 		if sm.keepAliveInterval > 0 {
 			go sm.keepAlive(req.Context())
