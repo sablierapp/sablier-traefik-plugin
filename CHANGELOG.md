@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.0](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.3.1...v1.4.0) (2026-10-28)
+
+
+### Features
+
+* add an optional dialtimeout param to the plugin ([#67](https://github.com/sablierapp/sablier-traefik-plugin/issues/67)) ([f4ce636](https://github.com/sablierapp/sablier-traefik-plugin/commit/f4ce636e0da3615120f58d65704e3ec61ef0ec47))
+
+
+### Bug Fixes
+
+* reuse the connection to Sablier between requests ([#68](https://github.com/sablierapp/sablier-traefik-plugin/issues/68)) ([c4bb890](https://github.com/sablierapp/sablier-traefik-plugin/commit/c4bb8905dac723cc4989138bed6158b30ebbef6c))
+
+
+### Chores
+
+* **deps:** bump actions/create-github-app-token from 3.2.0 to 3.3.0 ([#65](https://github.com/sablierapp/sablier-traefik-plugin/issues/65)) ([e2f571c](https://github.com/sablierapp/sablier-traefik-plugin/commit/e2f571c034edf6dee2697ca12495894a332a8c36))
+
 ## [1.3.1](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.3.0...v1.3.1) (2026-09-18)
 
 
