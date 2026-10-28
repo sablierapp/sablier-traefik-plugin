@@ -169,9 +169,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
-	defer func() {
-		_ = resp.Body.Close()
-	}()
+	defer closeBody(resp.Body)
 
 	conditonalResponseWriter := newResponseWriter(rw)
 
@@ -350,6 +348,15 @@ func (sm *SablierMiddleware) matchesIgnoredUserAgent(ua string) bool {
 	return false
 }
 
+// closeBody reads a response from Sablier to the end before closing it, so its
+// connection goes back to the pool for the next request. Go 1.27 does this on
+// Close, but Traefik releases built with older Go don't:
+// https://go.dev/blog/http-connection-reuse
+func closeBody(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, body)
+	_ = body.Close()
+}
+
 // keepAlive periodically sends requests to Sablier to renew the session while a
 // long-lived connection (SSE, WebSocket, long-polling) is held open. It stops
 // as soon as ctx is done, i.e. when the client disconnects.
@@ -364,7 +371,7 @@ func (sm *SablierMiddleware) keepAlive(ctx context.Context) {
 			keepAliveReq := sm.request.Clone(context.Background())
 			resp, err := sm.client.Do(keepAliveReq)
 			if err == nil {
-				_ = resp.Body.Close()
+				closeBody(resp.Body)
 			}
 		}
 	}
