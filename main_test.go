@@ -1321,3 +1321,117 @@ func TestSablierMiddleware_ServeHTTP_BackendNotReachedYet(t *testing.T) {
 		})
 	}
 }
+
+// trackedBody is a response body that records whether it was read to the end
+// before being closed.
+type trackedBody struct {
+	r         io.Reader
+	readToEOF atomic.Bool
+	closed    atomic.Bool
+}
+
+func (b *trackedBody) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if errors.Is(err, io.EOF) {
+		b.readToEOF.Store(true)
+	}
+	return n, err
+}
+
+func (b *trackedBody) Close() error {
+	b.closed.Store(true)
+	return nil
+}
+
+// readyTransport answers every request like Sablier does for a ready session,
+// and keeps the bodies it handed out.
+type readyTransport struct {
+	bodies chan *trackedBody
+}
+
+func (t *readyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body := &trackedBody{r: strings.NewReader(`{"session":{"status":"ready"}}`)}
+	select {
+	case t.bodies <- body:
+	default:
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"X-Sablier-Session-Status": []string{"ready"}},
+		Body:       body,
+		Request:    req,
+	}, nil
+}
+
+// Go's HTTP/1 client only reuses a connection once the previous response body
+// was read to the end. Traefik builds older than Go 1.27 don't drain unread
+// bodies on Close, so each request to Sablier would open a new connection.
+func TestSablierMiddleware_ReadsSablierResponseToTheEnd(t *testing.T) {
+	newMiddleware := func(t *testing.T, keepAliveInterval string, next http.Handler) (*SablierMiddleware, *readyTransport) {
+		t.Helper()
+		handler, err := New(context.Background(), next, &Config{
+			SablierURL:        "http://sablier:10000",
+			Names:             "nginx",
+			SessionDuration:   "1m",
+			Dynamic:           &DynamicConfiguration{},
+			KeepAliveInterval: keepAliveInterval,
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+		sm := handler.(*SablierMiddleware)
+		transport := &readyTransport{bodies: make(chan *trackedBody, 20)}
+		sm.client.Transport = transport
+		return sm, transport
+	}
+
+	t.Run("when the session is ready", func(t *testing.T) {
+		sm, transport := newMiddleware(t, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+			_, _ = fmt.Fprint(w, "response from service")
+		}))
+
+		sm.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/my-nginx", nil))
+
+		body := <-transport.bodies
+		if !body.closed.Load() {
+			t.Error("expected the response from Sablier to be closed")
+		}
+		if !body.readToEOF.Load() {
+			t.Error("expected the response from Sablier to be read to the end before it was closed")
+		}
+	})
+
+	t.Run("for keep-alive requests", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		sm, transport := newMiddleware(t, "20ms", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httptrace.ContextClientTrace(r.Context()).WroteHeaders()
+			// Hold the connection open, like SSE or a WebSocket, until disconnected.
+			<-r.Context().Done()
+		}))
+
+		done := make(chan struct{})
+		go func() {
+			sm.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/my-nginx", nil).WithContext(ctx))
+			close(done)
+		}()
+
+		<-transport.bodies // the initial request
+		keepAlive := <-transport.bodies
+		// The keep-alive loop closes the body right after the request returns.
+		deadline := time.Now().Add(time.Second)
+		for !keepAlive.closed.Load() && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		cancel()
+		<-done
+
+		if !keepAlive.closed.Load() {
+			t.Fatal("expected the keep-alive response from Sablier to be closed")
+		}
+		if !keepAlive.readToEOF.Load() {
+			t.Error("expected the keep-alive response from Sablier to be read to the end before it was closed")
+		}
+	})
+}
