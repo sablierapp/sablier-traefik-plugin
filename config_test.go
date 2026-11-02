@@ -21,6 +21,7 @@ func TestConfig_BuildRequest(t *testing.T) {
 		SessionDuration string
 		Dynamic         *traefik.DynamicConfiguration
 		Blocking        *traefik.BlockingConfiguration
+		Poke            *traefik.PokeConfiguration
 	}
 	tests := []struct {
 		name    string
@@ -28,6 +29,17 @@ func TestConfig_BuildRequest(t *testing.T) {
 		want    *http.Request
 		wantErr bool
 	}{
+		{
+			name: "poke session with group",
+			fields: fields{
+				SablierURL:      "http://sablier:10000",
+				Group:           "default",
+				SessionDuration: "1m",
+				Poke:            &traefik.PokeConfiguration{},
+			},
+			want:    createRequest("GET", "http://sablier:10000/api/strategies/poke?group=default&session_duration=1m", nil),
+			wantErr: false,
+		},
 		{
 			name: "dynamic session with required values",
 			fields: fields{
@@ -294,6 +306,7 @@ func TestConfig_BuildRequest(t *testing.T) {
 				SessionDuration: tt.fields.SessionDuration,
 				Dynamic:         tt.fields.Dynamic,
 				Blocking:        tt.fields.Blocking,
+				Poke:            tt.fields.Poke,
 			}
 
 			got, err := c.BuildRequest("sablier-middleware")
