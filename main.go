@@ -3,6 +3,7 @@ package sablier_traefik_plugin
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,10 @@ import (
 	"sync"
 	"time"
 )
+
+// statusClientClosedRequest is the status Traefik logs for a request the client
+// closed before the response (nginx's 499, which net/http does not define).
+const statusClientClosedRequest = 499
 
 type SablierMiddleware struct {
 	client            *http.Client
@@ -161,6 +166,13 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 
 	resp, err := sm.client.Do(sablierRequest)
 	if err != nil {
+		if errors.Is(req.Context().Err(), context.Canceled) {
+			// The client went away while Sablier was being asked: nobody reads
+			// this response. Report it as Traefik does for a request the client
+			// closed, not as a server error that would count against Sablier.
+			rw.WriteHeader(statusClientClosedRequest)
+			return
+		}
 		if sm.failOpen {
 			sm.next.ServeHTTP(rw, req)
 			return
