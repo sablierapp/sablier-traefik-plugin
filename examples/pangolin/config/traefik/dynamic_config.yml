@@ -1,0 +1,62 @@
+# Traefik file provider. Pangolin ships this file to declare its own dashboard
+# routers; everything you add by hand goes here too.
+
+http:
+  middlewares:
+    badger:
+      plugin:
+        badger:
+          disableForwardAuth: true
+
+    # Sablier middleware. Pangolin never generates this for you, so it is
+    # declared here and referenced from config/config.yml as
+    # `sablier-mimic@file` (the `@file` suffix is required because Pangolin's
+    # routers live in the `http` provider).
+    #
+    # One middleware instance per Sablier group.
+    sablier-mimic:
+      plugin:
+        sablier:
+          sablierUrl: http://sablier:10000
+          group: mimic
+          sessionDuration: 1m
+          dynamic:
+            displayName: Mimic
+            theme: hacker-terminal
+            refreshFrequency: 5s
+
+  # --- Pangolin dashboard, unchanged apart from being served over HTTP ---
+  routers:
+    next-router:
+      rule: "Host(`pangolin.localhost`) && !PathPrefix(`/api/v1`)"
+      service: next-service
+      entryPoints:
+        - web
+      middlewares:
+        - badger
+
+    api-router:
+      rule: "Host(`pangolin.localhost`) && PathPrefix(`/api/v1`)"
+      service: api-service
+      entryPoints:
+        - web
+      middlewares:
+        - badger
+
+    ws-router:
+      rule: "Host(`pangolin.localhost`)"
+      service: api-service
+      entryPoints:
+        - web
+      middlewares:
+        - badger
+
+  services:
+    next-service:
+      loadBalancer:
+        servers:
+          - url: "http://pangolin:3002" # Next.js server
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://pangolin:3000" # API / WebSocket server
