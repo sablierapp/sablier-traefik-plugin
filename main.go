@@ -176,6 +176,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	useRedirect := false
 
 	if resp.Header.Get("X-Sablier-Session-Status") == "ready" {
+		conditonalResponseWriter.ready = true
 		// Check if the backend already received request data
 		if sm.keepAliveInterval > 0 {
 			go sm.keepAlive(req.Context())
