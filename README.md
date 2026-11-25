@@ -18,6 +18,7 @@ This plugin is available in the [Traefik Plugin Catalog](https://plugins.traefik
   - [Docker](#docker)
   - [Docker Swarm](#docker-swarm)
   - [Kubernetes](#kubernetes)
+- [Instance names](#instance-names)
 - [Other Reverse Proxy Plugins](#other-reverse-proxy-plugins)
   - [Apache APISIX](#apache-apisix)
   - [Caddy](#caddy)
@@ -86,7 +87,8 @@ http:
 | Option            | Type     | Required | Default                | Description                                                                         |
 | ----------------- | -------- | -------- | ---------------------- | ----------------------------------------------------------------------------------- |
 | `sablierUrl`      | string   | Yes      | `http://sablier:10000` | URL of the Sablier server API (must be reachable from Traefik)                      |
-| `group`           | string   | Yes      | -                      | Group name for managing multiple instances collectively                         >    |
+| `group`           | string   | One of `group` or `names` | -     | Group of instances to start, from the `sablier.group` label. Preferred over `names`. |
+| `names`           | string   | One of `group` or `names` | -     | Comma-separated [instance names](#instance-names) to start, e.g. `whoami,nginx`. Cannot be combined with `group`. |
 | `sessionDuration` | duration | No       | -                      | Duration to keep instances running after the last request (e.g., `1m`, `30s`, `2h`) |
 | `keepAliveInterval` | duration | No     | -                      | How often Sablier is pinged to renew the session while a long-lived connection (SSE, WebSocket, long-polling) is held. Should be shorter than `sessionDuration`. Disabled when omitted. |
 | `failOpen`        | boolean  | No       | `false`                | Pass requests through to the backend when Sablier is unreachable instead of returning `HTTP 500`. |
@@ -304,6 +306,34 @@ whoami:
 - The blocking strategy is not yet supported due to Traefik's pod IP handling.
 
 Refer to the [Kubernetes E2E test script](./e2e/kubernetes.sh) for a working example.
+
+## Instance names
+
+Set either `group` or `names`, not both: Sablier rejects a request that sets both.
+
+`names` targets instances by the name Sablier gives them, which depends on its provider:
+
+- **Docker:** the container name, e.g. `whoami`. Compose names containers `<project>-<service>-<index>` unless `container_name` is set.
+- **Docker Swarm:** the service name, e.g. `mystack_whoami`.
+- **Kubernetes:** `<kind>_<namespace>_<name>_<replicas>`, e.g. `deployment_default_whoami_1` for a Deployment named `whoami` in the `default` namespace, started with 1 replica. `<kind>` is `deployment`, `statefulset` or `cnpgcluster`. Sablier's `--provider.kubernetes.delimiter` option replaces `_`.
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: sablier-whoami
+  namespace: default
+spec:
+  plugin:
+    sablier:
+      sablierUrl: http://sablier:10000
+      names: deployment_default_whoami_1
+      sessionDuration: 1m
+      dynamic:
+        displayName: Whoami
+```
+
+Prefer `group`: a name ties the middleware to the workload's kind, namespace and replica count, while a group only needs the `sablier.group` label on each workload. See [Kubernetes instance names](https://sablierapp.dev/providers/kubernetes/#instance-names) in the Sablier documentation.
 
 ## Other Reverse Proxy Plugins
 
