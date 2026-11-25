@@ -81,10 +81,10 @@ func CreateConfig() *Config {
 	}
 }
 
-func (c *Config) BuildRequest(middlewareName string) (*http.Request, error) {
-
+// prepare validates the settings shared by both strategies and splits Names.
+func (c *Config) prepare() error {
 	if len(c.SablierURL) == 0 {
-		return nil, fmt.Errorf("sablierURL cannot be empty")
+		return fmt.Errorf("sablierURL cannot be empty")
 	}
 
 	names := strings.Split(c.Names, ",")
@@ -97,11 +97,52 @@ func (c *Config) BuildRequest(middlewareName string) (*http.Request, error) {
 	}
 
 	if len(c.splittedNames) == 0 && len(c.Group) == 0 {
-		return nil, fmt.Errorf("you must specify at least one name or a group")
+		return fmt.Errorf("you must specify at least one name or a group")
+	}
+
+	return nil
+}
+
+// BuildRequests builds the Sablier request of each configured strategy.
+//
+// Configuring both dynamic and blocking turns the auto mode on: the middleware
+// then picks one of the two for each incoming request (see pickStrategy), so
+// both are returned. With a single strategy, the other request is nil.
+func (c *Config) BuildRequests(middlewareName string) (dynamic *http.Request, blocking *http.Request, err error) {
+	if err := c.prepare(); err != nil {
+		return nil, nil, err
+	}
+
+	if c.Dynamic == nil && c.Blocking == nil {
+		return nil, nil, fmt.Errorf("no strategy configured")
+	}
+
+	if c.Dynamic != nil {
+		dynamic, err = c.buildDynamicRequest(middlewareName)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if c.Blocking != nil {
+		blocking, err = c.buildBlockingRequest()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return dynamic, blocking, nil
+}
+
+// BuildRequest builds the Sablier request of a single-strategy configuration.
+// Both strategies at once (auto mode) need BuildRequests.
+func (c *Config) BuildRequest(middlewareName string) (*http.Request, error) {
+	if err := c.prepare(); err != nil {
+		return nil, err
 	}
 
 	if c.Dynamic != nil && c.Blocking != nil {
-		return nil, fmt.Errorf("only supply one strategy: dynamic or blocking")
+		return nil, fmt.Errorf("only supply one strategy: dynamic or blocking, or use BuildRequests for the auto mode")
 	}
 
 	if c.Dynamic != nil {
