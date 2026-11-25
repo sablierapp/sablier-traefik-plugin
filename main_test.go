@@ -616,6 +616,64 @@ func TestSablierMiddleware_ServeHTTP_SSE(t *testing.T) {
 		}
 	})
 
+	t.Run("streams SSE events written without an explicit WriteHeader", func(t *testing.T) {
+		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Sablier-Session-Status", "ready")
+			_, _ = w.Write([]byte("ready"))
+		}))
+		defer sablierMockServer.Close()
+
+		events := []string{
+			"data: event1\n\n",
+			"data: event2\n\n",
+		}
+
+		// The next handler never calls WriteHeader and the httptrace callbacks
+		// never fire: like net/http, the first Write must imply a 200 instead
+		// of being silently dropped (issue #73).
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			for _, event := range events {
+				_, _ = w.Write([]byte(event))
+				w.(http.Flusher).Flush()
+			}
+		})
+
+		sm, err := New(context.Background(), next, &Config{
+			SablierURL:      sablierMockServer.URL,
+			Names:           "nginx",
+			SessionDuration: "1m",
+			Dynamic:         &DynamicConfiguration{},
+		}, "middleware")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/sse/stream", nil)
+		req.Header.Set("Accept", "text/event-stream")
+		w := httptest.NewRecorder()
+
+		sm.ServeHTTP(w, req)
+
+		res := w.Result()
+		defer res.Body.Close() //nolint:errcheck
+
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", res.StatusCode)
+		}
+		if got := res.Header.Get("Content-Type"); got != "text/event-stream" {
+			t.Errorf("expected Content-Type text/event-stream, got %q", got)
+		}
+
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := string(body), strings.Join(events, ""); got != want {
+			t.Errorf("expected body %q, got %q", want, got)
+		}
+	})
+
 	t.Run("shows Sablier waiting page for SSE request when session is not ready", func(t *testing.T) {
 		sablierMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Sablier-Session-Status", "not-ready")
@@ -1178,6 +1236,38 @@ func TestResponseWriter_WriteHeader_PreservesBackendSetCookie(t *testing.T) {
 	if len(cookies) != 2 {
 		t.Fatalf("expected both the sticky and the backend Set-Cookie headers, got %d: %v", len(cookies), cookies)
 	}
+}
+
+func TestResponseWriter_Write(t *testing.T) {
+	t.Run("implies a 200 when WriteHeader was not called", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		rw := newResponseWriter(recorder)
+
+		rw.Header().Set("Content-Type", "text/event-stream")
+		_, _ = rw.Write([]byte("data: event\n\n"))
+
+		if recorder.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", recorder.Code)
+		}
+		if got := recorder.Header().Get("Content-Type"); got != "text/event-stream" {
+			t.Errorf("expected the buffered Content-Type to be flushed, got %q", got)
+		}
+		if got := recorder.Body.String(); got != "data: event\n\n" {
+			t.Errorf("expected the written body, got %q", got)
+		}
+	})
+
+	t.Run("drops the body of an error response raised before reaching a backend", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		rw := newResponseWriter(recorder)
+
+		http.Error(rw, "no available server", http.StatusServiceUnavailable)
+
+		if recorder.Code != http.StatusOK || recorder.Body.Len() != 0 || len(recorder.Header()) != 0 {
+			t.Errorf("expected nothing written to the client, got status %d, headers %v, body %q",
+				recorder.Code, recorder.Header(), recorder.Body.String())
+		}
+	})
 }
 
 func TestSablierMiddleware_ServeHTTP_PreservesBackendSetCookie(t *testing.T) {
