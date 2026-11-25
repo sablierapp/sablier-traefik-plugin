@@ -98,6 +98,24 @@ http:
 | `blocking.timeout` | duration | No       | -       | Maximum time to wait for instances to become ready |
 | `ignoreUserAgent` | string or string\[\] | No     | -        | List of [Go regexp](https://pkg.go.dev/regexp/syntax) patterns. Requests whose `User-Agent` matches any pattern receive an immediate `HTTP 200` without waking the container. Can be specified as a YAML list (preferred) or as a single string (backward-compatible). Patterns are case-sensitive unless the `(?i)` flag is used. |
 
+### Auto mode: both strategies at once
+
+Declare both `dynamic` and `blocking` and the middleware picks one **per request**:
+
+- **Browser navigations** get the **dynamic** waiting page: a page load or a link followed, top-level or in a frame.
+- **Everything else** is held by the **blocking** strategy: `fetch` and XHR calls from a page already open, scripts, images and other subresources, WebSockets, and clients that are not browsers (`curl`, mobile apps, API clients).
+
+This fixes single-page apps such as Grafana or Home Assistant behind Sablier. With the dynamic strategy alone, an open tab whose app has been stopped gets the waiting page's HTML in reply to its API calls, and breaks. In auto mode those calls wait for the app to start, while a fresh visit still shows the waiting page.
+
+```yaml
+          dynamic:
+            displayName: Grafana
+          blocking:
+            timeout: 2m
+```
+
+A request is a navigation when its `Sec-Fetch-Mode` header is `navigate`. Every current browser sends that header (Chrome 76+, Firefox 90+, Safari 16.4+). Without it, a `GET` whose `Accept` header asks for `text/html` counts as a navigation. `keepAliveInterval` renews a long-lived connection with the strategy that let it through.
+
 ## Usage
 
 The plugin can be configured in different ways depending on your deployment context:
@@ -128,8 +146,8 @@ http:
           keepAliveInterval: 30s            # (Optional) Re-ping Sablier every 30s to keep long-lived connections alive
           failOpen: false                   # (Optional) Pass through when Sablier is unreachable instead of returning HTTP 500
           dialTimeout: 2s                   # (Optional) Give up connecting to Sablier after 2s instead of 30s
-          # Only one strategy can be used at a time
-          # Declare either `dynamic` or `blocking`, not both
+          # Declare `dynamic`, `blocking`, or both. With both, navigations get the
+          # waiting page and every other request is held (see "Auto mode" above).
           ignoreUserAgent:                          # (Optional) List of regexp patterns; matching UAs are silently ignored
             - curl
             - "(?i)uptimerobot"

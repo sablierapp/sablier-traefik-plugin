@@ -15,10 +15,13 @@ import (
 )
 
 type SablierMiddleware struct {
-	client            *http.Client
-	request           *http.Request
+	client *http.Client
+	// dynamicRequest and blockingRequest are the Sablier requests of the
+	// configured strategies. One of them is nil unless both strategies are
+	// configured (auto mode).
+	dynamicRequest    *http.Request
+	blockingRequest   *http.Request
 	next              http.Handler
-	useRedirect       bool
 	failOpen          bool
 	ignoreUserAgents  []*regexp.Regexp
 	keepAliveInterval time.Duration
@@ -26,12 +29,16 @@ type SablierMiddleware struct {
 
 // New function creates the configuration
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	req, err := config.BuildRequest(name)
+	dynamicRequest, blockingRequest, err := config.BuildRequests(name)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", "sablier-traefik-plugin/"+Version)
+	for _, req := range []*http.Request{dynamicRequest, blockingRequest} {
+		if req != nil {
+			req.Header.Set("User-Agent", "sablier-traefik-plugin/"+Version)
+		}
+	}
 
 	var keepAliveInterval time.Duration
 	if config.KeepAliveInterval != "" {
@@ -60,11 +67,10 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	}
 
 	return &SablierMiddleware{
-		request: req,
-		client:  client,
-		next:    next,
-		// there is no way to make blocking work in traefik without redirect so let's make it default
-		useRedirect:       config.Blocking != nil,
+		dynamicRequest:    dynamicRequest,
+		blockingRequest:   blockingRequest,
+		client:            client,
+		next:              next,
 		failOpen:          config.FailOpen,
 		ignoreUserAgents:  ignoreUserAgents,
 		keepAliveInterval: keepAliveInterval,
@@ -157,7 +163,8 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		return
 	}
 
-	sablierRequest := sm.request.Clone(req.Context())
+	strategyRequest, blocking := sm.pickStrategy(req)
+	sablierRequest := strategyRequest.Clone(req.Context())
 
 	resp, err := sm.client.Do(sablierRequest)
 	if err != nil {
@@ -178,7 +185,7 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	if resp.Header.Get("X-Sablier-Session-Status") == "ready" {
 		// Check if the backend already received request data
 		if sm.keepAliveInterval > 0 {
-			go sm.keepAlive(req.Context())
+			go sm.keepAlive(req.Context(), strategyRequest)
 		}
 		trace := &httptrace.ClientTrace{
 			GetConn: func(hostPort string) {
@@ -193,7 +200,8 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		}
 		newCtx := httptrace.WithClientTrace(req.Context(), trace)
 		sm.next.ServeHTTP(conditonalResponseWriter, req.WithContext(newCtx))
-		useRedirect = sm.useRedirect
+		// there is no way to make blocking work in traefik without redirect so let's make it default
+		useRedirect = blocking
 	}
 
 	if !conditonalResponseWriter.ready {
@@ -360,7 +368,7 @@ func closeBody(body io.ReadCloser) {
 // keepAlive periodically sends requests to Sablier to renew the session while a
 // long-lived connection (SSE, WebSocket, long-polling) is held open. It stops
 // as soon as ctx is done, i.e. when the client disconnects.
-func (sm *SablierMiddleware) keepAlive(ctx context.Context) {
+func (sm *SablierMiddleware) keepAlive(ctx context.Context, strategyRequest *http.Request) {
 	ticker := time.NewTicker(sm.keepAliveInterval)
 	defer ticker.Stop()
 	for {
@@ -368,11 +376,42 @@ func (sm *SablierMiddleware) keepAlive(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			keepAliveReq := sm.request.Clone(context.Background())
+			keepAliveReq := strategyRequest.Clone(context.Background())
 			resp, err := sm.client.Do(keepAliveReq)
 			if err == nil {
 				closeBody(resp.Body)
 			}
 		}
 	}
+}
+
+// pickStrategy returns the Sablier request to send for req, and whether it is
+// the blocking strategy.
+//
+// With both strategies configured (auto mode), a browser navigation gets the
+// dynamic waiting page, and everything else is held by the blocking strategy:
+// fetch and XHR calls from a page already open, subresources, WebSockets and
+// clients that are not browsers. None of those can render the waiting page; a
+// script expecting JSON would get HTML instead.
+func (sm *SablierMiddleware) pickStrategy(req *http.Request) (*http.Request, bool) {
+	if sm.dynamicRequest == nil {
+		return sm.blockingRequest, true
+	}
+	if sm.blockingRequest == nil || isNavigation(req) {
+		return sm.dynamicRequest, false
+	}
+	return sm.blockingRequest, true
+}
+
+// isNavigation reports whether req loads a page in a browser.
+//
+// Browsers send Sec-Fetch-Mode on every request (Chrome 76, Firefox 90,
+// Safari 16.4), and only a navigation, top-level or into a frame, carries
+// "navigate". Without that header, a GET asking for HTML is taken for a
+// navigation: an older browser, or a client that would display the page.
+func isNavigation(req *http.Request) bool {
+	if mode := req.Header.Get("Sec-Fetch-Mode"); mode != "" {
+		return mode == "navigate"
+	}
+	return req.Method == http.MethodGet && strings.Contains(req.Header.Get("Accept"), "text/html")
 }
