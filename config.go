@@ -105,16 +105,22 @@ func (c *Config) prepare() error {
 
 // BuildRequests builds the Sablier request of each configured strategy.
 //
-// Configuring both dynamic and blocking turns the auto mode on: the middleware
-// then picks one of the two for each incoming request (see pickStrategy), so
-// both are returned. With a single strategy, the other request is nil.
+// Configuring both dynamic and blocking, or neither, turns the auto mode on:
+// the middleware then picks one of the two for each incoming request (see
+// pickStrategy), so both are returned. With a single strategy, the other
+// request is nil.
 func (c *Config) BuildRequests(middlewareName string) (dynamic *http.Request, blocking *http.Request, err error) {
 	if err := c.prepare(); err != nil {
 		return nil, nil, err
 	}
 
 	if c.Dynamic == nil && c.Blocking == nil {
-		return nil, nil, fmt.Errorf("no strategy configured")
+		// Traefik only creates the dynamic or blocking block when one of its
+		// options is set. A middleware that sets neither gets the auto mode
+		// with the defaults of both strategies, so that a group (or names) is
+		// all it needs (issue #11).
+		c.Dynamic = &DynamicConfiguration{}
+		c.Blocking = &BlockingConfiguration{}
 	}
 
 	if c.Dynamic != nil {

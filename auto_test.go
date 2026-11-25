@@ -275,3 +275,56 @@ func TestAutoStrategy_KeepAliveRenewsWithChosenStrategy(t *testing.T) {
 		}
 	}
 }
+
+// TestAutoStrategy_IsTheDefault covers issue #11: a middleware that sets
+// neither dynamic nor blocking used to fail to load, so a configuration made of
+// labels had to set an option such as dynamic.displayName just to pick a
+// strategy. It now gets the auto mode, and a group is all it needs.
+func TestAutoStrategy_IsTheDefault(t *testing.T) {
+	tests := []struct {
+		name     string
+		headers  map[string]string
+		strategy string
+	}{
+		{
+			name:     "browser navigation gets the waiting page",
+			headers:  map[string]string{"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"},
+			strategy: "dynamic",
+		},
+		{
+			name:     "fetch from an open page is held",
+			headers:  map[string]string{"Sec-Fetch-Mode": "cors", "Accept": "application/json"},
+			strategy: "blocking",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sablier := newAutoSablier(t, "not-ready")
+
+			// What Traefik builds from labels that only set the group and the
+			// Sablier URL.
+			config := CreateConfig()
+			config.SablierURL = sablier.server.URL
+			config.Group = "whoami"
+
+			sm, err := New(context.Background(), reachedBackend, config, "whoami-sablier@docker")
+			if err != nil {
+				t.Fatalf("expected the middleware to load without a strategy, got %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+			sm.ServeHTTP(httptest.NewRecorder(), req)
+
+			got := sablier.lastPath()
+			if !strings.HasPrefix(got, "/api/strategies/"+tt.strategy+"?") {
+				t.Errorf("Sablier was asked %q, want the %s strategy", got, tt.strategy)
+			}
+			if tt.strategy == "dynamic" && !strings.Contains(got, "display_name=whoami-sablier%40docker") {
+				t.Errorf("expected the middleware name as display name, got %q", got)
+			}
+		})
+	}
+}
