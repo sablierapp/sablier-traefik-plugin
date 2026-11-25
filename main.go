@@ -19,6 +19,17 @@ import (
 // closed before the response (nginx's 499, which net/http does not define).
 const statusClientClosedRequest = 499
 
+// noBackendRedirectDelay is how long a blocking request waits before being
+// redirected to itself when Sablier reports the session ready but Traefik has
+// no backend server to forward it to yet (see noBackendYet).
+//
+// Traefik serves a request with the configuration it had when the request
+// arrived, so only a new request can reach the new server, and Traefik's
+// providers apply changes at most every providersThrottleDuration (2s by
+// default). Redirecting straight away made the client loop hundreds of times
+// in that window, past the ~20 redirects browsers follow (issue #72).
+var noBackendRedirectDelay = time.Second
+
 type SablierMiddleware struct {
 	client *http.Client
 	// dynamicRequest and blockingRequest are the Sablier requests of the
@@ -30,6 +41,8 @@ type SablierMiddleware struct {
 	failOpen          bool
 	ignoreUserAgents  []*regexp.Regexp
 	keepAliveInterval time.Duration
+	// redirectDelay is noBackendRedirectDelay, kept per middleware for tests.
+	redirectDelay time.Duration
 }
 
 // New function creates the configuration
@@ -79,6 +92,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		failOpen:          config.FailOpen,
 		ignoreUserAgents:  ignoreUserAgents,
 		keepAliveInterval: keepAliveInterval,
+		redirectDelay:     noBackendRedirectDelay,
 	}, nil
 }
 
@@ -216,6 +230,12 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 		useRedirect = blocking
 	}
 
+	if useRedirect && !conditonalResponseWriter.ready && !sm.waitBeforeRedirect(req.Context()) {
+		// The client went away while waiting: nobody reads the redirect.
+		rw.WriteHeader(statusClientClosedRequest)
+		return
+	}
+
 	if !conditonalResponseWriter.ready {
 		conditonalResponseWriter.ready = true
 		// Prevent browsers and proxies from caching the waiting page or redirect.
@@ -244,6 +264,23 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 				http.Error(conditonalResponseWriter, err.Error(), http.StatusInternalServerError)
 			}
 		}
+	}
+}
+
+// waitBeforeRedirect waits redirectDelay, so that Traefik has a chance to load
+// the new backend server before the redirected request comes back (see
+// noBackendRedirectDelay). It returns false if ctx is done first.
+func (sm *SablierMiddleware) waitBeforeRedirect(ctx context.Context) bool {
+	if sm.redirectDelay <= 0 {
+		return true
+	}
+	timer := time.NewTimer(sm.redirectDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
