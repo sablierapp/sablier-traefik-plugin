@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.1](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.5.0...v1.5.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* default to the auto mode when no strategy is configured ([#82](https://github.com/sablierapp/sablier-traefik-plugin/issues/82)) ([5f8c40c](https://github.com/sablierapp/sablier-traefik-plugin/commit/5f8c40c289aeacd40d4f8183a72c6039de4d9858))
+* wait before redirecting a blocking request that found no backend yet ([#80](https://github.com/sablierapp/sablier-traefik-plugin/issues/80)) ([957f9be](https://github.com/sablierapp/sablier-traefik-plugin/commit/957f9be58aa633a6df9da89b8f34fa67da9769dc)), closes [#72](https://github.com/sablierapp/sablier-traefik-plugin/issues/72)
+
+
+### Documentation
+
+* document names and Kubernetes instance names ([#79](https://github.com/sablierapp/sablier-traefik-plugin/issues/79)) ([7e33f06](https://github.com/sablierapp/sablier-traefik-plugin/commit/7e33f0650546e2862d06b950af022a4432d3e308)), closes [#21](https://github.com/sablierapp/sablier-traefik-plugin/issues/21)
+
 ## [1.5.0](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.4.0...v1.5.0) (2026-11-25)
 
 
