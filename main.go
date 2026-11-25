@@ -176,7 +176,6 @@ func (sm *SablierMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request
 	useRedirect := false
 
 	if resp.Header.Get("X-Sablier-Session-Status") == "ready" {
-		conditonalResponseWriter.ready = true
 		// Check if the backend already received request data
 		if sm.keepAliveInterval > 0 {
 			go sm.keepAlive(req.Context())
@@ -241,6 +240,10 @@ type responseWriter struct {
 	ready          bool
 	// connecting is set once the proxy tries to connect to a backend server.
 	connecting bool
+	// discarded is set once WriteHeader drops an error response produced
+	// because there is no backend server yet (see noBackendYet), so that Write
+	// drops its body too.
+	discarded bool
 }
 
 func (r *responseWriter) Header() http.Header {
@@ -252,7 +255,15 @@ func (r *responseWriter) Header() http.Header {
 
 func (r *responseWriter) Write(buf []byte) (int, error) {
 	if !r.ready {
-		return len(buf), nil
+		if r.discarded {
+			// Body of an error response dropped by WriteHeader.
+			return len(buf), nil
+		}
+		// Like net/http, a Write without a prior WriteHeader implies a 200.
+		// Without this, a handler streaming a body (SSE, long-polling) without
+		// calling WriteHeader first would have every Write silently dropped
+		// whenever the httptrace callbacks did not fire (issue #73).
+		r.WriteHeader(http.StatusOK)
 	}
 	return r.responseWriter.Write(buf)
 }
@@ -272,6 +283,7 @@ func (r *responseWriter) WriteHeader(code int) {
 		// page on the final flush and override its text/html Content-Type
 		// (the page then renders as plain text).
 		r.headers = make(http.Header)
+		r.discarded = true
 		return
 	}
 
