@@ -275,3 +275,32 @@ func TestAutoStrategy_KeepAliveRenewsWithChosenStrategy(t *testing.T) {
 		}
 	}
 }
+
+// TestSablierMiddleware_NoStrategyDefaultsToDynamic covers issue #11: a
+// middleware that sets neither dynamic nor blocking used to fail to load, so a
+// configuration made of labels had to set an option such as
+// dynamic.displayName just to pick a strategy.
+func TestSablierMiddleware_NoStrategyDefaultsToDynamic(t *testing.T) {
+	sablier := newAutoSablier(t, "not-ready")
+
+	// What Traefik builds from labels that set no strategy option.
+	config := CreateConfig()
+	config.SablierURL = sablier.server.URL
+	config.Group = "whoami"
+	config.SessionDuration = "1m"
+
+	sm, err := New(context.Background(), reachedBackend, config, "whoami-sablier@docker")
+	if err != nil {
+		t.Fatalf("expected the middleware to load without a strategy, got %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	sm.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if got := sablier.lastPath(); !strings.HasPrefix(got, "/api/strategies/dynamic?") || !strings.Contains(got, "display_name=whoami-sablier%40docker") {
+		t.Errorf("expected the dynamic strategy with the middleware name as display name, got %q", got)
+	}
+	if w.Code != http.StatusOK || w.Body.String() != "waiting page" {
+		t.Errorf("expected the waiting page, got %d %q", w.Code, w.Body.String())
+	}
+}

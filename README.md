@@ -100,6 +100,8 @@ http:
 | `blocking.timeout` | duration | No       | -       | Maximum time to wait for instances to become ready |
 | `ignoreUserAgent` | string or string\[\] | No     | -        | List of [Go regexp](https://pkg.go.dev/regexp/syntax) patterns. Requests whose `User-Agent` matches any pattern receive an immediate `HTTP 200` without waking the container. Can be specified as a YAML list (preferred) or as a single string (backward-compatible). Patterns are case-sensitive unless the `(?i)` flag is used. |
 
+The middleware uses the strategy whose options you set: `dynamic`, `blocking`, or both (see the auto mode below). When it sets neither, it uses the **dynamic** strategy with its defaults, so labels do not need `dynamic.displayName` just to pick it. To use the blocking strategy from labels, set one of its options, such as `blocking.timeout`.
+
 ### Auto mode: both strategies at once
 
 Declare both `dynamic` and `blocking` and the middleware picks one **per request**:
@@ -150,6 +152,7 @@ http:
           dialTimeout: 2s                   # (Optional) Give up connecting to Sablier after 2s instead of 30s
           # Declare `dynamic`, `blocking`, or both. With both, navigations get the
           # waiting page and every other request is held (see "Auto mode" above).
+          # With neither, the dynamic strategy is used with its defaults.
           ignoreUserAgent:                          # (Optional) List of regexp patterns; matching UAs are silently ignored
             - curl
             - "(?i)uptimerobot"

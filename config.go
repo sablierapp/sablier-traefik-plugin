@@ -81,7 +81,8 @@ func CreateConfig() *Config {
 	}
 }
 
-// prepare validates the settings shared by both strategies and splits Names.
+// prepare validates the settings shared by both strategies, splits Names and
+// falls back to the dynamic strategy when no strategy is configured.
 func (c *Config) prepare() error {
 	if len(c.SablierURL) == 0 {
 		return fmt.Errorf("sablierURL cannot be empty")
@@ -100,6 +101,13 @@ func (c *Config) prepare() error {
 		return fmt.Errorf("you must specify at least one name or a group")
 	}
 
+	// Traefik only creates the dynamic or blocking block when one of its
+	// options is set, so a middleware configured with labels had to set an
+	// option such as dynamic.displayName just to pick a strategy (issue #11).
+	if c.Dynamic == nil && c.Blocking == nil {
+		c.Dynamic = &DynamicConfiguration{}
+	}
+
 	return nil
 }
 
@@ -111,10 +119,6 @@ func (c *Config) prepare() error {
 func (c *Config) BuildRequests(middlewareName string) (dynamic *http.Request, blocking *http.Request, err error) {
 	if err := c.prepare(); err != nil {
 		return nil, nil, err
-	}
-
-	if c.Dynamic == nil && c.Blocking == nil {
-		return nil, nil, fmt.Errorf("no strategy configured")
 	}
 
 	if c.Dynamic != nil {
@@ -145,12 +149,10 @@ func (c *Config) BuildRequest(middlewareName string) (*http.Request, error) {
 		return nil, fmt.Errorf("only supply one strategy: dynamic or blocking, or use BuildRequests for the auto mode")
 	}
 
-	if c.Dynamic != nil {
-		return c.buildDynamicRequest(middlewareName)
-	} else if c.Blocking != nil {
+	if c.Blocking != nil {
 		return c.buildBlockingRequest()
 	}
-	return nil, fmt.Errorf("no strategy configured")
+	return c.buildDynamicRequest(middlewareName)
 }
 
 func (c *Config) buildDynamicRequest(middlewareName string) (*http.Request, error) {
