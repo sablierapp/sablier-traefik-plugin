@@ -255,14 +255,13 @@ func TestConfig_BuildRequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "no strategy configured defaults to dynamic",
+			name: "no strategy configured returns error",
 			fields: fields{
-				SablierURL:      "http://sablier:10000",
-				Group:           "whoami",
-				SessionDuration: "1m",
+				SablierURL: "http://sablier:10000",
+				Names:      "nginx",
 			},
-			want:    createRequest("GET", "http://sablier:10000/api/strategies/dynamic?display_name=sablier-middleware&group=whoami&session_duration=1m", nil),
-			wantErr: false,
+			want:    nil,
+			wantErr: true,
 		},
 		{
 			name: "empty sablier URL returns error",

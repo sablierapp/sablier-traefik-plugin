@@ -100,11 +100,22 @@ http:
 | `blocking.timeout` | duration | No       | -       | Maximum time to wait for instances to become ready |
 | `ignoreUserAgent` | string or string\[\] | No     | -        | List of [Go regexp](https://pkg.go.dev/regexp/syntax) patterns. Requests whose `User-Agent` matches any pattern receive an immediate `HTTP 200` without waking the container. Can be specified as a YAML list (preferred) or as a single string (backward-compatible). Patterns are case-sensitive unless the `(?i)` flag is used. |
 
-The middleware uses the strategy whose options you set: `dynamic`, `blocking`, or both (see the auto mode below). When it sets neither, it uses the **dynamic** strategy with its defaults, so labels do not need `dynamic.displayName` just to pick it. To use the blocking strategy from labels, set one of its options, such as `blocking.timeout`.
+The middleware uses the strategy whose options you set: `dynamic`, `blocking`, or both. When it sets neither, it uses the **auto mode** below with the defaults of both strategies, so a `group` (or `names`) is all a middleware needs:
+
+```yaml
+http:
+  middlewares:
+    my-sablier:
+      plugin:
+        sablier:
+          group: my-app-group
+```
+
+`sablierUrl` defaults to `http://sablier:10000`. To use a single strategy, set one of its options, such as `dynamic.displayName` or `blocking.timeout`. On Docker Swarm and Kubernetes, where the blocking strategy has [limitations](#docker-swarm), set a `dynamic` option to keep every request on the waiting page.
 
 ### Auto mode: both strategies at once
 
-Declare both `dynamic` and `blocking` and the middleware picks one **per request**:
+Declare both `dynamic` and `blocking`, or neither, and the middleware picks one **per request**:
 
 - **Browser navigations** get the **dynamic** waiting page: a page load or a link followed, top-level or in a frame.
 - **Everything else** is held by the **blocking** strategy: `fetch` and XHR calls from a page already open, scripts, images and other subresources, WebSockets, and clients that are not browsers (`curl`, mobile apps, API clients).
@@ -152,7 +163,7 @@ http:
           dialTimeout: 2s                   # (Optional) Give up connecting to Sablier after 2s instead of 30s
           # Declare `dynamic`, `blocking`, or both. With both, navigations get the
           # waiting page and every other request is held (see "Auto mode" above).
-          # With neither, the dynamic strategy is used with its defaults.
+          # With neither, the auto mode is used with the defaults of both.
           ignoreUserAgent:                          # (Optional) List of regexp patterns; matching UAs are silently ignored
             - curl
             - "(?i)uptimerobot"
