@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.0](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.4.0...v1.5.0) (2026-11-25)
+
+
+### Features
+
+* pick the strategy per request when both are configured ([#78](https://github.com/sablierapp/sablier-traefik-plugin/issues/78)) ([8952551](https://github.com/sablierapp/sablier-traefik-plugin/commit/895255114f85aaf6c75a057dea8fa2518dcecc60))
+
+
+### Bug Fixes
+
+* report a request the client closed as 499, not 500 ([#70](https://github.com/sablierapp/sablier-traefik-plugin/issues/70)) ([b44dea6](https://github.com/sablierapp/sablier-traefik-plugin/commit/b44dea615ead73d78154b98469a4dc4bcf7d341a))
+* set responseWriter ready before passing to backend to fix SSE streaming ([#74](https://github.com/sablierapp/sablier-traefik-plugin/issues/74)) ([bb39eaf](https://github.com/sablierapp/sablier-traefik-plugin/commit/bb39eaf8fac83e1f2725f235a566b9145ae3f40c))
+
+
+### Chores
+
+* **deps:** bump actions/create-github-app-token from 3.3.0 to 3.4.0 ([#76](https://github.com/sablierapp/sablier-traefik-plugin/issues/76)) ([d5e946e](https://github.com/sablierapp/sablier-traefik-plugin/commit/d5e946e7ec13426239e6d24183aeb279c5d5d68d))
+* **deps:** bump actions/setup-go from 7.0.0 to 7.1.0 ([#75](https://github.com/sablierapp/sablier-traefik-plugin/issues/75)) ([a3f5ef3](https://github.com/sablierapp/sablier-traefik-plugin/commit/a3f5ef36c0b426b824a6d5205447e8fdbd24a848))
+
 ## [1.4.0](https://github.com/sablierapp/sablier-traefik-plugin/compare/v1.3.1...v1.4.0) (2026-10-28)
 
 
